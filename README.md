@@ -1,2 +1,205 @@
-# Unity JobScheduler
- 
+
+# JobScheduler Documentation
+
+## Overview
+
+The `JobScheduler` system provides a Burst-compatible framework for efficiently managing Unity's job system. It offers specialized schedulers for different job types (`IJob`, `IJobFor`, and `IJobParallelFor`), with batched scheduling and completion to minimize main thread blocking.
+
+## Classes
+
+### JobSchedulerBase
+
+Base struct that handles common job management functionality.
+
+```csharp
+public struct JobSchedulerBase : IDisposable
+```
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `BatchSize` | `byte` | Controls how many jobs are processed before yielding back to the main thread. Default is 8. |
+
+#### Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `ScheduleJob(JobHandle handle)` | `void` | Adds a job handle to the tracking list. |
+| `Complete()` | `UniTask` | Completes all tracked jobs in batches, yielding between batches. |
+| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. |
+| `Dispose()` | `void` | Completes all jobs and releases resources. |
+| `GetJobHandlesCount()` | `int` | Returns the number of tracked job handles. |
+
+### JobScheduler\<T>
+
+Specialized scheduler for `IJob` implementations.
+
+```csharp
+public struct JobScheduler<T> : IDisposable where T : unmanaged, IJob
+```
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
+
+#### Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `AddJob(T job)` | `void` | Adds a job to the queue for scheduling. |
+| `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
+| `ScheduleAll()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
+| `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
+| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
+| `Dispose()` | `void` | Completes all jobs and releases resources. |
+
+### JobForScheduler\<T>
+
+Specialized scheduler for `IJobFor` implementations.
+
+```csharp
+public struct JobForScheduler<T> : IDisposable where T : unmanaged, IJobFor
+```
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
+
+#### Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `AddJob(T job, int arrayLength)` | `void` | Adds a job to the queue with specified array length. |
+| `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
+| `ScheduleAll()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
+| `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
+| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
+| `Dispose()` | `void` | Completes all jobs and releases resources. |
+
+### JobParallelForScheduler\<T>
+
+Specialized scheduler for `IJobParallelFor` implementations.
+
+```csharp
+public struct JobParallelForScheduler<T> : IDisposable where T : unmanaged, IJobParallelFor
+```
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
+
+#### Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `AddJob(T job, int arrayLength, int innerBatchSize = 64)` | `void` | Adds a job to the queue with specified array length and inner batch size. |
+| `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
+| `ScheduleAll()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
+| `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
+| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
+| `Dispose()` | `void` | Completes all jobs and releases resources. |
+
+## Usage Examples
+
+### Using JobScheduler\<T> with IJob
+
+```csharp
+// Create a job
+struct MyJob : IJob
+{
+    public void Execute() 
+    {
+        // Job implementation
+    }
+}
+
+// Create a scheduler
+var scheduler = new JobScheduler<MyJob>();
+
+// Add jobs
+scheduler.AddJob(new MyJob());
+scheduler.AddJob(new MyJob());
+
+// Schedule and complete
+await scheduler.ScheduleAll();
+await scheduler.Complete();
+
+// Dispose when done
+scheduler.Dispose();
+```
+
+### Using JobForScheduler\<T> with IJobFor
+
+```csharp
+// Create a job
+struct MyJobFor : IJobFor
+{
+    public void Execute(int index) 
+    {
+        // Job implementation
+    }
+}
+
+// Create a scheduler
+var scheduler = new JobForScheduler<MyJobFor>();
+
+// Add jobs with array length
+scheduler.AddJob(new MyJobFor(), arrayLength: 100);
+
+// Schedule and complete
+await scheduler.ScheduleAll();
+await scheduler.Complete();
+
+// Dispose when done
+scheduler.Dispose();
+```
+
+### Using JobParallelForScheduler\<T> with IJobParallelFor
+
+```csharp
+// Create a job
+struct MyParallelJob : IJobParallelFor
+{
+    public void Execute(int index) 
+    {
+        // Job implementation
+    }
+}
+
+// Create a scheduler
+var scheduler = new JobParallelForScheduler<MyParallelJob>();
+
+// Add jobs with array length and inner batch size
+scheduler.AddJob(new MyParallelJob(), arrayLength: 1000, innerBatchSize: 64);
+
+// Schedule and complete
+await scheduler.ScheduleAll();
+await scheduler.Complete();
+
+// Dispose when done
+scheduler.Dispose();
+```
+
+## Performance Considerations
+
+1. **BatchSize**: Adjust the `BatchSize` property to balance responsiveness and overhead. Smaller values yield more frequently but add more overhead.
+
+2. **InnerBatchSize**: For parallel jobs, the inner batch size controls how many iterations each worker thread processes. Adjust based on workload characteristics.
+
+3. **Memory Management**: Always call `Dispose()` when done with a scheduler to prevent memory leaks.
+
+4. **Burst Compatibility**: All schedulers are designed to be Burst-compatible for maximum performance.
+
+## Implementation Notes
+
+- The system uses composition rather than inheritance, with specialized schedulers delegating common functionality to `JobSchedulerBase`.
+- All schedulers implement `IDisposable` to ensure proper cleanup of native collections.
+- `UniTask` integration allows for efficient asynchronous operation without blocking the main thread.
+- The `[BurstCompile]` attribute is applied to methods that can benefit from Burst compilation.
