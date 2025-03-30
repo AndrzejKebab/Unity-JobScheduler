@@ -5,7 +5,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using ZLinq;
 
-namespace PatataGames;
+namespace PatataGames.JobScheduler;
 
 /// <summary>
 /// Base job scheduler that provides common functionality for managing Unity job handles.

@@ -1,4 +1,3 @@
-
 # Unity JobScheduler
 
 ## Overview
@@ -66,6 +65,7 @@ public struct JobSchedulerBase : IDisposable
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding back to the main thread. Default is 8. |
+| `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
@@ -166,6 +166,9 @@ public struct JobParallelForScheduler<T> : IDisposable where T : unmanaged, IJob
 ### Using JobScheduler\<T> with IJob
 
 ```csharp
+using PatataGames.JobScheduler;
+using Unity.Jobs;
+
 // Create a job
 struct MyJob : IJob
 {
@@ -193,6 +196,9 @@ scheduler.Dispose();
 ### Using JobForScheduler\<T> with IJobFor
 
 ```csharp
+using PatataGames.JobScheduler;
+using Unity.Jobs;
+
 // Create a job
 struct MyJobFor : IJobFor
 {
@@ -219,6 +225,9 @@ scheduler.Dispose();
 ### Using JobParallelForScheduler\<T> with IJobParallelFor
 
 ```csharp
+using PatataGames.JobScheduler;
+using Unity.Jobs;
+
 // Create a job
 struct MyParallelJob : IJobParallelFor
 {
@@ -244,6 +253,27 @@ scheduler.Dispose();
 
 ## Advanced Usage
 
+### Using External Job Handles
+
+All scheduler types support tracking external job handles, useful if you want to schedule job immediately:
+
+```csharp
+using PatataGames.JobScheduler;
+using Unity.Jobs;
+
+// Create a scheduler
+var scheduler = new JobScheduler<MyJob>();
+
+// Schedule a job directly and get its handle
+JobHandle externalHandle = someJob.Schedule();
+
+// Add the external handle to the scheduler
+scheduler.ScheduleJob(externalHandle);
+
+// Complete all jobs including the external one
+await scheduler.Complete();
+```
+
 ### Controlling Batch Size
 
 ```csharp
@@ -254,11 +284,13 @@ scheduler.BatchSize = 16; // Process 16 jobs before yielding
 ### Checking Job Completion Status
 
 ```csharp
-var scheduler = new JobScheduler<MyJob>();
-// Add and schedule jobs...
+using PatataGames.JobScheduler;
+
+var baseScheduler = new JobSchedulerBase();
+// Add job handles...
 
 // Check if all jobs are completed
-if (scheduler.AreJobsCompleted)
+if (baseScheduler.AreJobsCompleted)
 {
     // All jobs are done
 }
