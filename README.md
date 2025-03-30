@@ -12,8 +12,8 @@ This package requires the following dependencies:
 - **Unity.Jobs**: Core Unity package for the C# Job System
 - **Unity.Collections**: Provides NativeList and other Burst-compatible collections
 - **Unity.Burst**: For high-performance native code compilation
-- **Cysharp.Threading.Tasks (UniTask)**: For efficient asynchronous operations
-- **ZLinq**: Used for allocation-free LINQ-like operations on collections
+- [**UniTask**](https://github.com/Cysharp/UniTask): For efficient asynchronous operations
+- [**ZLinq**](https://github.com/Cysharp/ZLinq): Used for allocation-free LINQ-like operations on collections
 
 Add these dependencies to your project's `manifest.json`:
 
