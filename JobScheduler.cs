@@ -15,12 +15,17 @@ namespace PatataGames.JobScheduler;
 public struct JobSchedulerBase(int initialCapacity = 64) : IDisposable
 {
     private NativeList<JobHandle> jobHandles = new(initialCapacity, Allocator.Persistent);
-    
+    private byte                  batchSize = 8;
+
     /// <summary>
     /// Controls how many jobs are processed before yielding back to the main thread.
     /// Default is 8.
     /// </summary>
-    public byte BatchSize { get; set; } = 8;
+    public byte BatchSize
+    {
+        get => batchSize;
+        set => batchSize = value <= 0 ? (byte)8 : value;
+    }
 
     /// <summary>
     /// Adds a job handle to the tracking list.
