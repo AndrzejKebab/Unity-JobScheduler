@@ -1,15 +1,61 @@
 
-# JobScheduler Documentation
+# Unity JobScheduler
 
 ## Overview
 
 The `JobScheduler` system provides a Burst-compatible framework for efficiently managing Unity's job system. It offers specialized schedulers for different job types (`IJob`, `IJobFor`, and `IJobParallelFor`), with batched scheduling and completion to minimize main thread blocking.
 
-## Classes
+## Dependencies
+
+This package requires the following dependencies:
+
+- **Unity.Jobs**: Core Unity package for the C# Job System
+- **Unity.Collections**: Provides NativeList and other Burst-compatible collections
+- **Unity.Burst**: For high-performance native code compilation
+- **Cysharp.Threading.Tasks (UniTask)**: For efficient asynchronous operations
+- **ZLinq**: Used for allocation-free LINQ-like operations on collections
+
+Add these dependencies to your project's `manifest.json`:
+
+```json
+{
+  "dependencies": {
+    "com.unity.burst": "1.8.4",
+    "com.unity.collections": "1.5.1",
+    "com.unity.jobs": "0.70.0-preview.7",
+    "com.cysharp.unitask": "2.3.3",
+    "com.zlinq": "1.0.0"
+  },
+  "scopedRegistries": [
+    {
+      "name": "package.openupm.com",
+      "url": "https://package.openupm.com",
+      "scopes": [
+        "com.cysharp.unitask",
+        "com.zlinq"
+      ]
+    }
+  ]
+}
+```
+
+## Key Features
+
+- **Batched Processing**: Automatically yields to the main thread to prevent blocking
+- **Burst Compatibility**: All schedulers are designed to work with Burst compilation
+- **Memory Safety**: Proper disposal of native collections
+- **Async/Await Support**: Uses UniTask for efficient asynchronous operations
+- **Specialized Schedulers**: Optimized implementations for different job types
+
+## Scheduler Types
 
 ### JobSchedulerBase
 
-Base struct that handles common job management functionality.
+Base implementation that provides common functionality for all job schedulers:
+
+- Tracking job handles
+- Batched completion with yielding
+- Resource management
 
 ```csharp
 public struct JobSchedulerBase : IDisposable
@@ -33,7 +79,10 @@ public struct JobSchedulerBase : IDisposable
 
 ### JobScheduler\<T>
 
-Specialized scheduler for `IJob` implementations.
+Specialized scheduler for `IJob` implementations:
+
+- Queue-based job management
+- Batched scheduling and completion
 
 ```csharp
 public struct JobScheduler<T> : IDisposable where T : unmanaged, IJob
@@ -58,7 +107,10 @@ public struct JobScheduler<T> : IDisposable where T : unmanaged, IJob
 
 ### JobForScheduler\<T>
 
-Specialized scheduler for `IJobFor` implementations.
+Specialized scheduler for `IJobFor` implementations:
+
+- Manages jobs that process arrays of data sequentially
+- Configurable array length per job
 
 ```csharp
 public struct JobForScheduler<T> : IDisposable where T : unmanaged, IJobFor
@@ -83,7 +135,10 @@ public struct JobForScheduler<T> : IDisposable where T : unmanaged, IJobFor
 
 ### JobParallelForScheduler\<T>
 
-Specialized scheduler for `IJobParallelFor` implementations.
+Specialized scheduler for `IJobParallelFor` implementations:
+
+- Manages jobs that process arrays of data in parallel
+- Configurable array length and inner batch size per job
 
 ```csharp
 public struct JobParallelForScheduler<T> : IDisposable where T : unmanaged, IJobParallelFor
@@ -187,6 +242,38 @@ await scheduler.Complete();
 scheduler.Dispose();
 ```
 
+## Advanced Usage
+
+### Controlling Batch Size
+
+```csharp
+var scheduler = new JobScheduler<MyJob>();
+scheduler.BatchSize = 16; // Process 16 jobs before yielding
+```
+
+### Checking Job Completion Status
+
+```csharp
+var scheduler = new JobScheduler<MyJob>();
+// Add and schedule jobs...
+
+// Check if all jobs are completed
+if (scheduler.AreJobsCompleted)
+{
+    // All jobs are done
+}
+```
+
+### Immediate Completion
+
+```csharp
+var scheduler = new JobScheduler<MyJob>();
+// Add and schedule jobs...
+
+// Complete all jobs immediately without yielding
+scheduler.CompleteAll();
+```
+
 ## Performance Considerations
 
 1. **BatchSize**: Adjust the `BatchSize` property to balance responsiveness and overhead. Smaller values yield more frequently but add more overhead.
@@ -203,3 +290,9 @@ scheduler.Dispose();
 - All schedulers implement `IDisposable` to ensure proper cleanup of native collections.
 - `UniTask` integration allows for efficient asynchronous operation without blocking the main thread.
 - The `[BurstCompile]` attribute is applied to methods that can benefit from Burst compilation.
+
+## Thread Safety
+
+- The schedulers are designed to be used from the main thread.
+- The underlying job system handles thread safety for job execution.
+- Native collections are not thread-safe for concurrent writing, so avoid modifying the scheduler from multiple threads.

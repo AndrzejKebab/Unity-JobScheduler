@@ -3,6 +3,7 @@ using Cysharp.Threading.Tasks;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using ZLinq;
 
 namespace PatataGames;
 
@@ -67,7 +68,26 @@ public struct JobSchedulerBase(int initialCapacity = 64) : IDisposable
         for (var i = 0; i < jobHandles.Length; i++) jobHandles[i].Complete();
         jobHandles.Clear();
     }
-
+    
+    /// <summary>
+    /// Returns the number of tracked job handles.
+    /// </summary>
+    /// <returns>The count of job handles currently being tracked.</returns>
+    public int GetJobHandlesCount() => jobHandles.Length;
+    
+    /// <summary>
+    /// Checks if all scheduled jobs have been completed.
+    /// </summary>
+    /// <remarks>
+    /// This property uses LINQ-like operations through ZLinq's AsValueEnumerable to efficiently
+    /// iterate through all job handles and check their completion status without allocations.
+    /// It returns true only when every tracked job handle has its IsCompleted property set to true.
+    /// </remarks>
+    /// <value>
+    /// <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
+    /// </value>
+    public bool AreJobsCompleted => jobHandles.AsValueEnumerable().All(handle => handle.IsCompleted);
+    
     /// <summary>
     /// Completes all jobs and releases resources.
     /// </summary>
@@ -76,12 +96,6 @@ public struct JobSchedulerBase(int initialCapacity = 64) : IDisposable
         CompleteAll();
         jobHandles.Dispose();
     }
-    
-    /// <summary>
-    /// Returns the number of tracked job handles.
-    /// </summary>
-    /// <returns>The count of job handles currently being tracked.</returns>
-    public int GetJobHandlesCount() => jobHandles.Length;
 }
 
 /// <summary>
