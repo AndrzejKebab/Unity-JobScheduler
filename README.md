@@ -1,5 +1,8 @@
 # Unity JobScheduler
 
+## Warning
+This is WIP and yet not tested!
+
 ## Overview
 
 The `JobScheduler` system provides a Burst-compatible framework for efficiently managing Unity's job system. It offers specialized schedulers for different job types (`IJob`, `IJobFor`, and `IJobParallelFor`), with batched scheduling and completion to minimize main thread blocking.
@@ -71,7 +74,7 @@ public struct JobSchedulerBase : IDisposable
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `ScheduleJob(JobHandle handle)` | `void` | Adds a job handle to the tracking list. |
+| `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
 | `Complete()` | `UniTask` | Completes all tracked jobs in batches, yielding between batches. |
 | `CompleteAll()` | `void` | Completes all tracked jobs without yielding. |
 | `Dispose()` | `void` | Completes all jobs and releases resources. |
