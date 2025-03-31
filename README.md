@@ -1,3 +1,4 @@
+
 # Unity JobScheduler
 
 ## Warning
@@ -16,6 +17,7 @@ This package requires the following dependencies:
 - **Unity.Burst**: For high-performance native code compilation
 - [**UniTask**](https://github.com/Cysharp/UniTask): For efficient asynchronous operations
 - [**ZLinq**](https://github.com/Cysharp/ZLinq): Used for allocation-free LINQ-like operations on collections
+- [**UnityRoslynUpdater**](https://github.com/DaZombieKiller/UnityRoslynUpdater): For updating Unity Roslyn to the latest version to use newer features.
 
 Add these dependencies to your project's `manifest.json`:
 
@@ -69,6 +71,7 @@ public struct JobSchedulerBase : IDisposable
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding back to the main thread. Default is 8. |
 | `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
+| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
 
 #### Methods
 
@@ -78,7 +81,6 @@ public struct JobSchedulerBase : IDisposable
 | `Complete()` | `UniTask` | Completes all tracked jobs in batches, yielding between batches. |
 | `CompleteAll()` | `void` | Completes all tracked jobs without yielding. |
 | `Dispose()` | `void` | Completes all jobs and releases resources. |
-| `GetJobHandlesCount()` | `int` | Returns the number of tracked job handles. |
 
 ### JobScheduler\<T>
 
@@ -96,12 +98,15 @@ public struct JobScheduler<T> : IDisposable where T : unmanaged, IJob
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
+| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
+| `JobsCount` | `int` | Returns the number of jobs in the queue waiting to be scheduled. |
+| `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `AddJob(T job)` | `void` | Adds a job to the queue for scheduling. |
+| `AddJob(T job, JobHandle dependency = default)` | `void` | Adds a job to the queue for scheduling with optional dependency. |
 | `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
 | `ScheduleAll()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
 | `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
@@ -124,12 +129,15 @@ public struct JobForScheduler<T> : IDisposable where T : unmanaged, IJobFor
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
+| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
+| `JobsCount` | `int` | Returns the number of jobs in the queue waiting to be scheduled. |
+| `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `AddJob(T job, int arrayLength)` | `void` | Adds a job to the queue with specified array length. |
+| `AddJob(T job, int arrayLength, JobHandle dependency = default)` | `void` | Adds a job to the queue with specified array length and optional dependency. |
 | `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
 | `ScheduleAll()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
 | `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
@@ -152,12 +160,15 @@ public struct JobParallelForScheduler<T> : IDisposable where T : unmanaged, IJob
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
+| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
+| `JobsCount` | `int` | Returns the number of jobs in the queue waiting to be scheduled. |
+| `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `AddJob(T job, int arrayLength, int innerBatchSize = 64)` | `void` | Adds a job to the queue with specified array length and inner batch size. |
+| `AddJob(T job, int arrayLength, int innerBatchSize = 64, JobHandle dependency = default)` | `void` | Adds a job to the queue with specified array length, inner batch size, and optional dependency. |
 | `ScheduleJob(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
 | `ScheduleAll()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
 | `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
@@ -297,6 +308,9 @@ if (baseScheduler.AreJobsCompleted)
 {
     // All jobs are done
 }
+
+// Check how many job handles are being tracked
+int pendingJobs = baseScheduler.JobHandlesCount;
 ```
 
 ### Immediate Completion
