@@ -2,7 +2,10 @@
 # Unity JobScheduler
 
 ## Warning
-This is WIP and yet not tested!
+This is WIP and yet not **fully** tested!
+
+### Example in use
+[working example](https://github.com/user-attachments/assets/f4e8e3b4-e6ab-4e32-be8a-aefc0032b5ba)
 
 ## Overview
 
