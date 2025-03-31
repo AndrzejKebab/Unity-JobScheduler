@@ -45,7 +45,7 @@ public struct JobSchedulerBase(int initialCapacity = 64) : IDisposable
     public async UniTask Complete()
     {
         byte count = 0;
-        using var completed = new NativeList<int>(Allocator.Temp);
+        var completed = new NativeList<int>(Allocator.Persistent);
 
         for (var i = 0; i < jobHandles.Length; i++)
         {
@@ -60,7 +60,7 @@ public struct JobSchedulerBase(int initialCapacity = 64) : IDisposable
 
         for (var i = completed.Length - 1; i >= 0; i--) jobHandles.RemoveAt(completed[i]);
 
-        if (count > 0) await UniTask.Yield();
+        completed.Dispose();
     }
 
     /// <summary>
@@ -83,11 +83,6 @@ public struct JobSchedulerBase(int initialCapacity = 64) : IDisposable
     /// <summary>
     /// Checks if all scheduled jobs have been completed.
     /// </summary>
-    /// <remarks>
-    /// This property uses LINQ-like operations through ZLinq's AsValueEnumerable to efficiently
-    /// iterate through all job handles and check their completion status without allocations.
-    /// It returns true only when every tracked job handle has its IsCompleted property set to true.
-    /// </remarks>
     /// <value>
     /// <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
     /// </value>
@@ -185,6 +180,12 @@ public struct JobScheduler<T>(int initialCapacity = 64) : IDisposable
     /// </summary>
     [BurstCompile]
     public void CompleteAll() => baseScheduler.CompleteAll();
+
+    public int  GetJobHandlesCount() => baseScheduler.GetJobHandlesCount();
+    
+    public int GetJobsCount()    => jobQueue.Length;
+    
+    public bool AreJobsCompleted     => baseScheduler.AreJobsCompleted;
 
     /// <summary>
     /// Completes all jobs and releases resources.
@@ -293,6 +294,12 @@ public struct JobForScheduler<T>(int initialCapacity = 64) : IDisposable
     /// </summary>
     [BurstCompile]
     public void CompleteAll() => baseScheduler.CompleteAll();
+
+    public int  GetJobHandlesCount() => baseScheduler.GetJobHandlesCount();
+    
+    public int GetJobsCount()    => jobQueue.Length;
+    
+    public bool AreJobsCompleted     => baseScheduler.AreJobsCompleted;
 
     /// <summary>
     /// Completes all jobs and releases resources.
@@ -404,6 +411,12 @@ public struct JobParallelForScheduler<T>(int initialCapacity = 64) : IDisposable
     /// </summary>
     [BurstCompile]
     public void CompleteAll() => baseScheduler.CompleteAll();
+
+    public int  GetJobHandlesCount() => baseScheduler.GetJobHandlesCount();
+    
+    public int GetJobsCount()    => jobQueue.Length;
+    
+    public bool AreJobsCompleted     => baseScheduler.AreJobsCompleted;
 
     /// <summary>
     /// Completes all jobs and releases resources.
