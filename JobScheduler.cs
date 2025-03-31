@@ -120,12 +120,27 @@ public struct JobScheduler<T>(int initialCapacity = 64) : IDisposable
 		set => baseScheduler.BatchSize = value;
 	}
 
+	/// <summary>
+	///     Returns the number of tracked job handles.
+	/// </summary>
 	public int JobHandlesCount => baseScheduler.JobHandlesCount;
 
+	/// <summary>
+	///     Returns the number of jobs in the queue waiting to be scheduled.
+	/// </summary>
 	public int JobsCount => jobQueue.Length;
 
+	/// <summary>
+	///     Checks if all scheduled jobs have been completed.
+	/// </summary>
+	/// <value>
+	///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
+	/// </value>
 	public bool AreJobsCompleted => baseScheduler.AreJobsCompleted;
 	
+	/// <summary>
+	///     Internal structure to store job data along with its dependency.
+	/// </summary>
 	[BurstCompile]
 	private struct JobData
 	{
@@ -137,7 +152,7 @@ public struct JobScheduler<T>(int initialCapacity = 64) : IDisposable
 	///     Adds a job to the queue for scheduling.
 	/// </summary>
 	/// <param name="job">The job to add.</param>
-	/// <param name="dependency"></param>
+	/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 	[BurstCompile]
 	public void AddJob(T job, JobHandle dependency = default) => jobQueue.Add(new JobData()
 	                                          {
@@ -225,10 +240,22 @@ public struct JobForScheduler<T>(int initialCapacity = 64) : IDisposable
 		set => baseScheduler.BatchSize = value;
 	}
 	
+	/// <summary>
+	///     Returns the number of tracked job handles.
+	/// </summary>
 	public int JobHandlesCount => baseScheduler.JobHandlesCount;
 
+	/// <summary>
+	///     Returns the number of jobs in the queue waiting to be scheduled.
+	/// </summary>
 	public int JobsCount => jobQueue.Length;
 
+	/// <summary>
+	///     Checks if all scheduled jobs have been completed.
+	/// </summary>
+	/// <value>
+	///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
+	/// </value>
 	public bool AreJobsCompleted => baseScheduler.AreJobsCompleted;
 
 	/// <summary>
@@ -247,7 +274,7 @@ public struct JobForScheduler<T>(int initialCapacity = 64) : IDisposable
 	/// </summary>
 	/// <param name="job">The job to add.</param>
 	/// <param name="arrayLength">The length of the array to process.</param>
-	/// <param name="dependency"></param>
+	/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 	[BurstCompile]
 	public void AddJob(T job, int arrayLength, JobHandle dependency = default)
 	{
@@ -340,10 +367,22 @@ public struct JobParallelForScheduler<T>(int initialCapacity = 64) : IDisposable
 		set => baseScheduler.BatchSize = value;
 	}
 	
+	/// <summary>
+	///     Returns the number of tracked job handles.
+	/// </summary>
 	public int JobHandlesCount => baseScheduler.JobHandlesCount;
 
+	/// <summary>
+	///     Returns the number of jobs in the queue waiting to be scheduled.
+	/// </summary>
 	public int JobsCount => jobQueue.Length;
 	
+	/// <summary>
+	///     Checks if all scheduled jobs have been completed.
+	/// </summary>
+	/// <value>
+	///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
+	/// </value>
 	public bool AreJobsCompleted => baseScheduler.AreJobsCompleted;
 	
 	/// <summary>
@@ -364,7 +403,7 @@ public struct JobParallelForScheduler<T>(int initialCapacity = 64) : IDisposable
 	/// <param name="job">The job to add.</param>
 	/// <param name="arrayLength">The length of the array to process.</param>
 	/// <param name="innerBatchSize">The batch size for each worker thread. Default is 64.</param>
-	/// <param name="dependency"></param>
+	/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 	[BurstCompile]
 	public void AddJob(T job, int arrayLength, int innerBatchSize = 64, JobHandle dependency = default)
 	{
