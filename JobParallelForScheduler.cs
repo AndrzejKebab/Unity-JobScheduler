@@ -7,31 +7,33 @@ using Unity.Jobs;
 namespace PatataGames.JobScheduler
 {
 	/// <summary>
-	///     Specialized scheduler for IJob implementations.
+	///     Specialized scheduler for IJobParallelFor implementations.
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
-	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJob.</typeparam>
+	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobParallelFor.</typeparam>
 	[BurstCompile]
-	public struct JobScheduler<T> : IDisposable
-		where T : unmanaged, IJob
+	public struct JobParallelForScheduler<T> : IDisposable
+		where T : unmanaged, IJobParallelFor
 	{
-		private JobSchedulerBase    baseScheduler;
-		private NativeList<JobData> jobsList;
+		private JobSchedulerBase               baseScheduler;
+		private NativeList<JobParallelForData> jobsList;
 		
 		/// <summary>
-		///     Internal structure to store job data along with its dependency.
+		///     Internal structure to store job data along with its array length and inner batch size.
 		/// </summary>
 		[BurstCompile]
-		private struct JobData
+		private struct JobParallelForData
 		{
 			public T         Job;
+			public int       ArrayLength;
+			public int       InnerBatchSize;
 			public JobHandle Dependency;
 		}
-
-		public JobScheduler(int capacity = 64,byte batchSize = 8)
+		
+		public JobParallelForScheduler(int capacity = 64, byte batchSize = 8)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
-			jobsList = new NativeList<JobData>(capacity, Allocator.Persistent);
+			jobsList = new NativeList<JobParallelForData>(capacity, Allocator.Persistent);
 		}
 
 		/// <summary>
@@ -61,19 +63,23 @@ namespace PatataGames.JobScheduler
 		///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
 		/// </value>
 		public bool AreJobsCompleted => baseScheduler.AreJobsCompleted;
-		
+
 		/// <summary>
-		///     Adds a job to the queue for scheduling.
+		///     Adds a job to the queue for scheduling with the specified array length and inner batch size.
 		/// </summary>
 		/// <param name="job">The job to add.</param>
+		/// <param name="arrayLength">The length of the array to process.</param>
+		/// <param name="innerBatchSize">The batch size for each worker thread. Default is 64.</param>
 		/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 		[BurstCompile]
-		public void AddJob(T job, JobHandle dependency = default)
+		public void AddJob(T job, int arrayLength, int innerBatchSize = 64, JobHandle dependency = default)
 		{
-			jobsList.Add(new JobData
+			jobsList.Add(new JobParallelForData
 			             {
-				             Job       = job,
-				             Dependency = dependency
+				             Job            = job,
+				             ArrayLength    = arrayLength,
+				             InnerBatchSize = innerBatchSize,
+				             Dependency     = dependency
 			             });
 		}
 
@@ -97,10 +103,10 @@ namespace PatataGames.JobScheduler
 		{
 			byte count = 0;
 
-			foreach (JobData data in jobsList)
+			foreach (JobParallelForData data in jobsList)
 			{
 				count++;
-				JobHandle handle = data.Job.Schedule(data.Dependency);
+				JobHandle handle = data.Job.Schedule(data.ArrayLength, data.InnerBatchSize, data.Dependency);
 				baseScheduler.ScheduleJob(handle);
 
 				if (count < BatchSize) continue;

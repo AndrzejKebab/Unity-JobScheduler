@@ -7,31 +7,32 @@ using Unity.Jobs;
 namespace PatataGames.JobScheduler
 {
 	/// <summary>
-	///     Specialized scheduler for IJob implementations.
+	///     Specialized scheduler for IJobFor implementations.
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
-	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJob.</typeparam>
+	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobFor.</typeparam>
 	[BurstCompile]
-	public struct JobScheduler<T> : IDisposable
-		where T : unmanaged, IJob
+	public struct JobForScheduler<T> : IDisposable
+		where T : unmanaged, IJobFor
 	{
-		private JobSchedulerBase    baseScheduler;
-		private NativeList<JobData> jobsList;
+		private JobSchedulerBase       baseScheduler;
+		private NativeList<JobForData> jobList;
 		
 		/// <summary>
-		///     Internal structure to store job data along with its dependency.
+		///     Internal structure to store job data along with its array length.
 		/// </summary>
 		[BurstCompile]
-		private struct JobData
+		private struct JobForData
 		{
 			public T         Job;
+			public int       ArrayLength;
 			public JobHandle Dependency;
 		}
 
-		public JobScheduler(int capacity = 64,byte batchSize = 8)
+		public JobForScheduler(int capacity = 64, byte batchSize = 8)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
-			jobsList = new NativeList<JobData>(capacity, Allocator.Persistent);
+			jobList = new NativeList<JobForData>(capacity, Allocator.Persistent);
 		}
 
 		/// <summary>
@@ -52,7 +53,7 @@ namespace PatataGames.JobScheduler
 		/// <summary>
 		///     Returns the number of jobs in the queue waiting to be scheduled.
 		/// </summary>
-		public int JobsCount => jobsList.Length;
+		public int JobsCount => jobList.Length;
 
 		/// <summary>
 		///     Checks if all scheduled jobs have been completed.
@@ -63,17 +64,19 @@ namespace PatataGames.JobScheduler
 		public bool AreJobsCompleted => baseScheduler.AreJobsCompleted;
 		
 		/// <summary>
-		///     Adds a job to the queue for scheduling.
+		///     Adds a job to the queue for scheduling with the specified array length.
 		/// </summary>
 		/// <param name="job">The job to add.</param>
+		/// <param name="arrayLength">The length of the array to process.</param>
 		/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 		[BurstCompile]
-		public void AddJob(T job, JobHandle dependency = default)
+		public void AddJob(T job, int arrayLength, JobHandle dependency = default)
 		{
-			jobsList.Add(new JobData
+			jobList.Add(new JobForData
 			             {
-				             Job       = job,
-				             Dependency = dependency
+				             Job         = job,
+				             ArrayLength = arrayLength,
+				             Dependency   = dependency
 			             });
 		}
 
@@ -97,10 +100,10 @@ namespace PatataGames.JobScheduler
 		{
 			byte count = 0;
 
-			foreach (JobData data in jobsList)
+			foreach (JobForData data in jobList)
 			{
 				count++;
-				JobHandle handle = data.Job.Schedule(data.Dependency);
+				JobHandle handle = data.Job.Schedule(data.ArrayLength, data.Dependency);
 				baseScheduler.ScheduleJob(handle);
 
 				if (count < BatchSize) continue;
@@ -108,7 +111,7 @@ namespace PatataGames.JobScheduler
 				count = 0;
 			}
 
-			jobsList.Clear();
+			jobList.Clear();
 
 			if (count > 0) await UniTask.Yield();
 		}
@@ -123,6 +126,7 @@ namespace PatataGames.JobScheduler
 		{
 			return baseScheduler.Complete();
 		}
+
 
 		/// <summary>
 		///     Completes all tracked jobs without yielding.
@@ -140,7 +144,7 @@ namespace PatataGames.JobScheduler
 		public void Dispose()
 		{
 			baseScheduler.Dispose();
-			jobsList.Dispose();
+			jobList.Dispose();
 		}
 	}
 }
