@@ -51,23 +51,29 @@ namespace PatataGames.JobScheduler
 		[BurstCompile]
 		public async UniTask Complete()
 		{
-			byte count     = 0;
-			var  completed = new NativeList<int>(Allocator.Persistent);
-
-			for (var i = 0; i < jobHandles.Length; i++)
+			// Early exit if no jobs to process
+			if (jobHandles.Length == 0) return;
+			
+			byte batchCount = 0;
+			
+			// Process from the end to make removal safer
+			for (var i = jobHandles.Length - 1; i >= 0; i--)
 			{
-				count++;
+				// Only process jobs that are already completed
+				if (!jobHandles[i].IsCompleted) continue;
+
+				// Complete the job and remove it
 				jobHandles[i].Complete();
-				completed.Add(i);
+				jobHandles.RemoveAtSwapBack(i);
 
-				if (count < BatchSize) continue;
+				// Increment batch counter
+				batchCount++;
+
+				// Yield after processing a batch to prevent blocking
+				if (batchCount < BatchSize) continue;
 				await UniTask.Yield();
-				count = 0;
+				batchCount = 0;
 			}
-
-			for (var i = completed.Length - 1; i >= 0; i--) jobHandles.RemoveAt(completed[i]);
-
-			completed.Dispose();
 		}
 
 		/// <summary>

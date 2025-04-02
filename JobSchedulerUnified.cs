@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Linq;
 using System.Runtime.InteropServices;
+using Cysharp.Threading.Tasks;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
@@ -21,12 +21,22 @@ namespace PatataGames.JobScheduler
     [BurstCompile]
     public struct JobSchedulerUnified : IDisposable
 	{
-		private JobSchedulerBase   jobSchedulerBase;
+		private JobSchedulerBase   baseScheduler;
 		private NativeList<IntPtr> jobPtrs; // Using IntPtr to store GCHandle values for job datas
-
+		
+		/// <summary>
+		///     Controls how many jobs are processed before yielding back to the main thread.
+		///     Default is 8.
+		/// </summary>
+		public byte BatchSize
+		{
+			get => baseScheduler.BatchSize;
+			set => baseScheduler.BatchSize = value;
+		}
+		
 		public JobSchedulerUnified(int initialCapacity = 64, byte batchSize = 8)
 		{
-			jobSchedulerBase = new JobSchedulerBase(initialCapacity, batchSize);
+			baseScheduler = new JobSchedulerBase(initialCapacity, batchSize);
 			jobPtrs          = new NativeList<IntPtr>(initialCapacity, Allocator.Persistent);
 		}
 
@@ -41,7 +51,7 @@ namespace PatataGames.JobScheduler
 			{
 				var      jobData = new JobData<T> { Job = job };
 				GCHandle handle  = GCHandle.Alloc(jobData, GCHandleType.Pinned);
-				jobPtrs.Add((IntPtr)handle);
+				jobPtrs.Add(GCHandle.ToIntPtr(handle));
 				return jobPtrs.Length - 1; // Return index of added job
 			}
 			catch (Exception e)
@@ -55,7 +65,7 @@ namespace PatataGames.JobScheduler
         ///     Add an IJobFor to the scheduler without scheduling it
         /// </summary>
         [BurstCompile]
-        public int AddJob<T>(T job, int arrayLength, JobHandle dependency = default)
+        public int AddJob<T>(T job, int arrayLength = 1, JobHandle dependency = default)
 			where T : unmanaged, IJobFor
 		{
 			try
@@ -72,7 +82,7 @@ namespace PatataGames.JobScheduler
 					              Dependency  = dependency
 				              };
 				GCHandle handle = GCHandle.Alloc(jobData, GCHandleType.Pinned);
-				jobPtrs.Add((IntPtr)handle);
+				jobPtrs.Add(GCHandle.ToIntPtr(handle));
 				return jobPtrs.Length - 1; // Return index of added job
 			}
 			catch (Exception e)
@@ -86,7 +96,7 @@ namespace PatataGames.JobScheduler
         ///     Add an IJobParallelFor to the scheduler without scheduling it
         /// </summary>
         [BurstCompile]
-        public int AddJobParallel<T>(T job, int arrayLength, int innerLoopBatchCount = 0)
+        public int AddJobParallel<T>(T job, int arrayLength = 1, int innerLoopBatchCount = 1, JobHandle dependency = default)
 			where T : unmanaged, IJobParallelFor
 		{
 			try
@@ -96,17 +106,18 @@ namespace PatataGames.JobScheduler
 					throw new ArgumentOutOfRangeException(nameof(arrayLength), "Array length must be positive");
 				}
 
-				if (innerLoopBatchCount <= 0) innerLoopBatchCount = jobSchedulerBase.BatchSize;
+				if (innerLoopBatchCount <= 0) innerLoopBatchCount = baseScheduler.BatchSize;
 
 
 				var jobData = new JobParallelForData<T>
 				              {
 					              Job            = job,
 					              ArrayLength    = arrayLength,
-					              InnerBatchSize = innerLoopBatchCount
+					              InnerBatchSize = innerLoopBatchCount,
+					              Dependency = dependency
 				              };
 				GCHandle handle = GCHandle.Alloc(jobData, GCHandleType.Pinned);
-				jobPtrs.Add((IntPtr)handle);
+				jobPtrs.Add(GCHandle.ToIntPtr(handle));
 				return jobPtrs.Length - 1; // Return index of added job
 			}
 			catch (Exception e)
@@ -138,7 +149,7 @@ namespace PatataGames.JobScheduler
 			if (target is not IJobData jobData)
 				throw new InvalidOperationException($"Invalid job data type: {target?.GetType().Name ?? "null"}");
 			JobHandle jobHandle = jobData.Schedule();
-			jobSchedulerBase.AddJobHandle(jobHandle);
+			baseScheduler.AddJobHandle(jobHandle);
 			return jobHandle;
 
 		}
@@ -147,8 +158,9 @@ namespace PatataGames.JobScheduler
         ///     Schedule all stored jobs
         /// </summary>
         [BurstCompile]
-        public void ScheduleAll()
-		{
+        public async UniTask ScheduleAll()
+        {
+	        var count = 0;
 			for (var i = 0; i < jobPtrs.Length; i++)
 			{
 				IntPtr ptr    = jobPtrs[i];
@@ -159,13 +171,20 @@ namespace PatataGames.JobScheduler
 					Debug.LogWarning($"Job at index {i} is not allocated, skipping");
 					continue;
 				}
+				
 				var target = handle.Target;
+				
 				if (target is IJobData jobData)
 				{
 					try
 					{
+						count++;
 						JobHandle jobHandle = jobData.Schedule();
-						jobSchedulerBase.AddJobHandle(jobHandle);
+						baseScheduler.AddJobHandle(jobHandle);
+						
+						if (count < BatchSize) continue;
+						await UniTask.Yield();
+						count = 0;
 					}
 					catch (Exception e)
 					{
@@ -205,7 +224,7 @@ namespace PatataGames.JobScheduler
 			try
 			{
 				JobHandle handle = job.Schedule(dependsOn);
-				jobSchedulerBase.AddJobHandle(handle);
+				baseScheduler.AddJobHandle(handle);
 			}
 			catch (Exception e)
 			{
@@ -218,13 +237,13 @@ namespace PatataGames.JobScheduler
         ///     Schedule an IJobFor immediately
         /// </summary>
         [BurstCompile]
-        public void Schedule<T>(T job, int arrayLength, JobHandle dependsOn = default)
+        public void Schedule<T>(T job, int arrayLength = 1, JobHandle dependsOn = default)
 			where T : struct, IJobFor
 		{
 			try
 			{
 				JobHandle handle = job.Schedule(arrayLength, dependsOn);
-				jobSchedulerBase.AddJobHandle(handle);
+				baseScheduler.AddJobHandle(handle);
 			}
 			catch (Exception e)
 			{
@@ -237,7 +256,7 @@ namespace PatataGames.JobScheduler
         ///     Schedule an IJobParallelFor immediately
         /// </summary>
         [BurstCompile]
-        public void ScheduleParallel<T>(T         job, int arrayLength, int innerLoopBatchCount = 0,
+        public void ScheduleParallel<T>(T         job, int arrayLength = 1, int innerLoopBatchCount = 1,
                                              JobHandle dependsOn = default) where T : struct, IJobParallelFor
 		{
 			if (arrayLength <= 0)
@@ -246,12 +265,12 @@ namespace PatataGames.JobScheduler
 				throw new ArgumentOutOfRangeException(nameof(arrayLength), "Array length must be positive");
 			}
             
-			if (innerLoopBatchCount <= 0) innerLoopBatchCount = jobSchedulerBase.BatchSize;
+			if (innerLoopBatchCount <= 0) innerLoopBatchCount = baseScheduler.BatchSize;
 
 			try
 			{
 				JobHandle handle = job.Schedule(arrayLength, innerLoopBatchCount, dependsOn);
-				jobSchedulerBase.AddJobHandle(handle);
+				baseScheduler.AddJobHandle(handle);
 			}
 			catch (Exception e)
 			{
@@ -260,15 +279,21 @@ namespace PatataGames.JobScheduler
 			}
 		}
 		#endregion
-
+		
+		[BurstCompile]
+		public async UniTask Complete() => await baseScheduler.Complete();
+		
         /// <summary>
         ///     Complete all scheduled jobs
         /// </summary>
         [BurstCompile]
         public void CompleteAll()
 		{
-			jobSchedulerBase.CompleteAll();
+			baseScheduler.CompleteAll();
 		}
+
+		public int HasAnyJobsToSchedule => jobPtrs.Length;
+		public int HasPendingJobs    => baseScheduler.JobHandlesCount;
 		
 		[BurstCompile]
 		public void Dispose()
@@ -291,7 +316,7 @@ namespace PatataGames.JobScheduler
 			}
 
 			// Dispose native containers
-			jobSchedulerBase.Dispose();
+			baseScheduler.Dispose();
 		}
 	}
 }
