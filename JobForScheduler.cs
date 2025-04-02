@@ -6,33 +6,35 @@ using Unity.Jobs;
 
 namespace PatataGames.JobScheduler
 {
+	[BurstCompile]
+	public struct JobForData<T> : IJobData where T : struct, IJobFor
+	{
+		public T         Job;
+		public int       ArrayLength;
+		public JobHandle Dependency;
+		
+		public JobHandle Schedule()
+		{
+			return Job.Schedule(ArrayLength, Dependency);
+		}
+	}
+	
 	/// <summary>
 	///     Specialized scheduler for IJobFor implementations.
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobFor.</typeparam>
 	[BurstCompile]
-	public struct JobForScheduler<T> : IDisposable
+	public struct JobForScheduler<T>  : IDisposable 
 		where T : unmanaged, IJobFor
 	{
 		private JobSchedulerBase       baseScheduler;
-		private NativeList<JobForData> jobList;
-		
-		/// <summary>
-		///     Internal structure to store job data along with its array length.
-		/// </summary>
-		[BurstCompile]
-		private struct JobForData
-		{
-			public T         Job;
-			public int       ArrayLength;
-			public JobHandle Dependency;
-		}
+		private NativeList<JobForData<T>> jobList;
 
 		public JobForScheduler(int capacity = 64, byte batchSize = 8)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
-			jobList = new NativeList<JobForData>(capacity, Allocator.Persistent);
+			jobList = new NativeList<JobForData<T>>(capacity, Allocator.Persistent);
 		}
 
 		/// <summary>
@@ -72,7 +74,7 @@ namespace PatataGames.JobScheduler
 		[BurstCompile]
 		public void AddJob(T job, int arrayLength, JobHandle dependency = default)
 		{
-			jobList.Add(new JobForData
+			jobList.Add(new JobForData<T>
 			             {
 				             Job         = job,
 				             ArrayLength = arrayLength,
@@ -87,7 +89,7 @@ namespace PatataGames.JobScheduler
 		[BurstCompile]
 		public void ScheduleJob(JobHandle handle)
 		{
-			baseScheduler.ScheduleJob(handle);
+			baseScheduler.AddJobHandle(handle);
 		}
 
 		/// <summary>
@@ -100,11 +102,11 @@ namespace PatataGames.JobScheduler
 		{
 			byte count = 0;
 
-			foreach (JobForData data in jobList)
+			foreach (JobForData<T> data in jobList)
 			{
 				count++;
 				JobHandle handle = data.Job.Schedule(data.ArrayLength, data.Dependency);
-				baseScheduler.ScheduleJob(handle);
+				baseScheduler.AddJobHandle(handle);
 
 				if (count < BatchSize) continue;
 				await UniTask.Yield();

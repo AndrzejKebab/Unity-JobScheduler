@@ -37,7 +37,7 @@ namespace PatataGames.JobScheduler
 		///     Adds a job handle to the tracking list.
 		/// </summary>
 		/// <param name="handle">The job handle to track.</param>
-		public void ScheduleJob(JobHandle handle)
+		public void AddJobHandle(JobHandle handle)
 		{
 			jobHandles.Add(handle);
 		}

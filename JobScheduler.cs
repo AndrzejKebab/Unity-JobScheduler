@@ -6,6 +6,18 @@ using Unity.Jobs;
 
 namespace PatataGames.JobScheduler
 {
+	[BurstCompile]
+	public struct JobData<T> : IJobData where T: struct, IJob
+	{
+		public T         Job;
+		public JobHandle Dependency;
+		
+		public JobHandle Schedule()
+		{
+			return Job.Schedule(Dependency);
+		}
+	}
+	
 	/// <summary>
 	///     Specialized scheduler for IJob implementations.
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
@@ -16,22 +28,12 @@ namespace PatataGames.JobScheduler
 		where T : unmanaged, IJob
 	{
 		private JobSchedulerBase    baseScheduler;
-		private NativeList<JobData> jobsList;
-		
-		/// <summary>
-		///     Internal structure to store job data along with its dependency.
-		/// </summary>
-		[BurstCompile]
-		private struct JobData
-		{
-			public T         Job;
-			public JobHandle Dependency;
-		}
+		private NativeList<JobData<T>> jobsList;
 
 		public JobScheduler(int capacity = 64,byte batchSize = 8)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
-			jobsList = new NativeList<JobData>(capacity, Allocator.Persistent);
+			jobsList = new NativeList<JobData<T>>(capacity, Allocator.Persistent);
 		}
 
 		/// <summary>
@@ -70,7 +72,7 @@ namespace PatataGames.JobScheduler
 		[BurstCompile]
 		public void AddJob(T job, JobHandle dependency = default)
 		{
-			jobsList.Add(new JobData
+			jobsList.Add(new JobData<T>
 			             {
 				             Job       = job,
 				             Dependency = dependency
@@ -84,7 +86,7 @@ namespace PatataGames.JobScheduler
 		[BurstCompile]
 		public void ScheduleJob(JobHandle handle)
 		{
-			baseScheduler.ScheduleJob(handle);
+			baseScheduler.AddJobHandle(handle);
 		}
 
 		/// <summary>
@@ -97,11 +99,11 @@ namespace PatataGames.JobScheduler
 		{
 			byte count = 0;
 
-			foreach (JobData data in jobsList)
+			foreach (JobData<T> data in jobsList)
 			{
 				count++;
 				JobHandle handle = data.Job.Schedule(data.Dependency);
-				baseScheduler.ScheduleJob(handle);
+				baseScheduler.AddJobHandle(handle);
 
 				if (count < BatchSize) continue;
 				await UniTask.Yield();
