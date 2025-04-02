@@ -3,6 +3,7 @@ using Cysharp.Threading.Tasks;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
+using UnityEngine;
 using ZLinq;
 
 namespace PatataGames.JobScheduler
@@ -76,8 +77,16 @@ namespace PatataGames.JobScheduler
 		[BurstCompile]
 		public void CompleteAll()
 		{
-			for (var i = 0; i < jobHandles.Length; i++) jobHandles[i].Complete();
-			jobHandles.Clear();
+			try
+			{
+				for (var i = 0; i < jobHandles.Length; i++) jobHandles[i].Complete();
+				jobHandles.Clear();
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning("Error completing jobs " + e);
+				throw;
+			}
 		}
 
 		/// <summary>

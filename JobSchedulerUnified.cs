@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Collections;
@@ -36,10 +37,18 @@ namespace PatataGames.JobScheduler
         [BurstCompile]
         public int AddJob<T>(T job) where T : unmanaged, IJob
 		{
-			var      jobData = new JobData<T> { Job = job };
-			GCHandle handle  = GCHandle.Alloc(jobData, GCHandleType.Pinned);
-			jobPtrs.Add((IntPtr)handle);
-			return jobPtrs.Length - 1; // Return index of added job
+			try
+			{
+				var      jobData = new JobData<T> { Job = job };
+				GCHandle handle  = GCHandle.Alloc(jobData, GCHandleType.Pinned);
+				jobPtrs.Add((IntPtr)handle);
+				return jobPtrs.Length - 1; // Return index of added job
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"Failed to add job of type {typeof(T).Name}: " + e);
+				throw;
+			}
 		}
 
         /// <summary>
@@ -49,15 +58,28 @@ namespace PatataGames.JobScheduler
         public int AddJob<T>(T job, int arrayLength, JobHandle dependency = default)
 			where T : unmanaged, IJobFor
 		{
-			var jobData = new JobForData<T>
-			              {
-				              Job         = job,
-				              ArrayLength = arrayLength,
-				              Dependency  = dependency
-			              };
-			GCHandle handle = GCHandle.Alloc(jobData, GCHandleType.Pinned);
-			jobPtrs.Add((IntPtr)handle);
-			return jobPtrs.Length - 1; // Return index of added job
+			try
+			{
+				if (arrayLength <= 0)
+				{
+					throw new ArgumentOutOfRangeException(nameof(arrayLength), "Array length must be positive");
+				}
+                
+				var jobData = new JobForData<T>
+				              {
+					              Job         = job,
+					              ArrayLength = arrayLength,
+					              Dependency  = dependency
+				              };
+				GCHandle handle = GCHandle.Alloc(jobData, GCHandleType.Pinned);
+				jobPtrs.Add((IntPtr)handle);
+				return jobPtrs.Length - 1; // Return index of added job
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"Failed to add job of type {typeof(T).Name}: " + e);
+				throw;
+			}
 		}
 
         /// <summary>
@@ -67,17 +89,31 @@ namespace PatataGames.JobScheduler
         public int AddJobParallel<T>(T job, int arrayLength, int innerLoopBatchCount = 0)
 			where T : unmanaged, IJobParallelFor
 		{
-			if (innerLoopBatchCount <= 0) innerLoopBatchCount = jobSchedulerBase.BatchSize;
+			try
+			{
+				if (arrayLength <= 0)
+				{
+					throw new ArgumentOutOfRangeException(nameof(arrayLength), "Array length must be positive");
+				}
 
-			var jobData = new JobParallelForData<T>
-			              {
-				              Job            = job,
-				              ArrayLength    = arrayLength,
-				              InnerBatchSize = innerLoopBatchCount
-			              };
-			GCHandle handle = GCHandle.Alloc(jobData, GCHandleType.Pinned);
-			jobPtrs.Add((IntPtr)handle);
-			return jobPtrs.Length - 1; // Return index of added job
+				if (innerLoopBatchCount <= 0) innerLoopBatchCount = jobSchedulerBase.BatchSize;
+
+
+				var jobData = new JobParallelForData<T>
+				              {
+					              Job            = job,
+					              ArrayLength    = arrayLength,
+					              InnerBatchSize = innerLoopBatchCount
+				              };
+				GCHandle handle = GCHandle.Alloc(jobData, GCHandleType.Pinned);
+				jobPtrs.Add((IntPtr)handle);
+				return jobPtrs.Length - 1; // Return index of added job
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"Failed to add job of type {typeof(T).Name}: " + e);
+				throw;
+			}
 		}
 		#endregion
 
@@ -92,10 +128,10 @@ namespace PatataGames.JobScheduler
 				throw new ArgumentOutOfRangeException(nameof(jobIndex), "Job index is out of range");
 
 			IntPtr ptr    = jobPtrs[jobIndex];
-			var    handle = (GCHandle)ptr;
+			GCHandle    handle = GCHandle.FromIntPtr(ptr);
 
 			if (!handle.IsAllocated)
-				throw new InvalidOperationException("The job handle has been freed");
+				throw new InvalidOperationException($"Job at index {jobIndex} is not allocated and has been freed");
 
 			// Handle different job data types
 			var target = handle.Target;
@@ -116,14 +152,26 @@ namespace PatataGames.JobScheduler
 			for (var i = 0; i < jobPtrs.Length; i++)
 			{
 				IntPtr ptr    = jobPtrs[i];
-				var    handle = (GCHandle)ptr;
+				GCHandle    handle = GCHandle.FromIntPtr(ptr);
 
-				if (!handle.IsAllocated) continue;
+				if (!handle.IsAllocated) 
+				{
+					Debug.LogWarning($"Job at index {i} is not allocated, skipping");
+					continue;
+				}
 				var target = handle.Target;
 				if (target is IJobData jobData)
 				{
-					JobHandle jobHandle = jobData.Schedule();
-					jobSchedulerBase.AddJobHandle(jobHandle);
+					try
+					{
+						JobHandle jobHandle = jobData.Schedule();
+						jobSchedulerBase.AddJobHandle(jobHandle);
+					}
+					catch (Exception e)
+					{
+						Debug.LogWarning($"Failed to schedule job at index {i}: " + e);
+						throw;
+					}
 				}
 				else
 				{
@@ -152,37 +200,64 @@ namespace PatataGames.JobScheduler
         ///     Schedule an IJob immediately
         /// </summary>
         [BurstCompile]
-        public JobHandle Schedule<T>(T job, JobHandle dependsOn = default) where T : struct, IJob
+        public void Schedule<T>(T job, JobHandle dependsOn = default) where T : struct, IJob
 		{
-			JobHandle handle = job.Schedule(dependsOn);
-			jobSchedulerBase.AddJobHandle(handle);
-			return handle;
+			try
+			{
+				JobHandle handle = job.Schedule(dependsOn);
+				jobSchedulerBase.AddJobHandle(handle);
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"Failed to schedule IJob of type {typeof(T).Name}: " + e);
+				throw;
+			}
 		}
 
         /// <summary>
         ///     Schedule an IJobFor immediately
         /// </summary>
         [BurstCompile]
-        public JobHandle Schedule<T>(T job, int arrayLength, JobHandle dependsOn = default)
+        public void Schedule<T>(T job, int arrayLength, JobHandle dependsOn = default)
 			where T : struct, IJobFor
 		{
-			JobHandle handle = job.Schedule(arrayLength, dependsOn);
-			jobSchedulerBase.AddJobHandle(handle);
-			return handle;
+			try
+			{
+				JobHandle handle = job.Schedule(arrayLength, dependsOn);
+				jobSchedulerBase.AddJobHandle(handle);
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"Failed to schedule IJobFor of type {typeof(T).Name} with array length {arrayLength}: " + e);
+				throw;
+			}
 		}
 
         /// <summary>
         ///     Schedule an IJobParallelFor immediately
         /// </summary>
         [BurstCompile]
-        public JobHandle ScheduleParallel<T>(T         job, int arrayLength, int innerLoopBatchCount = 0,
+        public void ScheduleParallel<T>(T         job, int arrayLength, int innerLoopBatchCount = 0,
                                              JobHandle dependsOn = default) where T : struct, IJobParallelFor
 		{
+			if (arrayLength <= 0)
+			{
+				Debug.LogWarning($"Invalid array length {arrayLength} for IJobParallelFor of type {typeof(T).Name}");
+				throw new ArgumentOutOfRangeException(nameof(arrayLength), "Array length must be positive");
+			}
+            
 			if (innerLoopBatchCount <= 0) innerLoopBatchCount = jobSchedulerBase.BatchSize;
 
-			JobHandle handle = job.Schedule(arrayLength, innerLoopBatchCount, dependsOn);
-			jobSchedulerBase.AddJobHandle(handle);
-			return handle;
+			try
+			{
+				JobHandle handle = job.Schedule(arrayLength, innerLoopBatchCount, dependsOn);
+				jobSchedulerBase.AddJobHandle(handle);
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning($"Failed to schedule IJobParallelFor of type {typeof(T).Name} with array length {arrayLength}: " + e);
+				throw;
+			}
 		}
 		#endregion
 
@@ -194,99 +269,29 @@ namespace PatataGames.JobScheduler
 		{
 			jobSchedulerBase.CompleteAll();
 		}
-
+		
 		[BurstCompile]
-        public void Dispose()
+		public void Dispose()
 		{
 			// Free all GCHandles
-			foreach (GCHandle handle in jobPtrs.AsValueEnumerable().Cast<GCHandle>().Where(handle => handle.IsAllocated))
+			if (jobPtrs.IsCreated)
 			{
-				handle.Free();
+				foreach (IntPtr ptr in jobPtrs)
+				{
+					if (ptr == IntPtr.Zero) continue;
+					GCHandle handle = GCHandle.FromIntPtr(ptr);
+					if (handle.IsAllocated)
+					{
+						handle.Free();
+					}
+				}
+
+				// Dispose the native list
+				jobPtrs.Dispose();
 			}
 
 			// Dispose native containers
 			jobSchedulerBase.Dispose();
-			if (jobPtrs.IsCreated) jobPtrs.Dispose();
 		}
 	}
-
-	#region Test Example
-	// Example job implementations
-	[BurstCompile]
-	public struct TestJob : IJob
-	{
-		public void Execute()
-		{
-			// Implementation
-		}
-	}
-
-	[BurstCompile]
-	public struct TestJobFor : IJobFor
-	{
-		public void Execute(int index)
-		{
-			// Implementation
-		}
-	}
-
-	[BurstCompile]
-	public struct TestJobParallelFor : IJobParallelFor
-	{
-		public void Execute(int index)
-		{
-			// Implementation
-		}
-	}
-	
-		
-	/// <summary>
-	///     Example usage of JobSchedulerUnified
-	/// </summary>
-	public class JobSchedulerExample : MonoBehaviour
-	{
-		private JobSchedulerUnified scheduler;
-
-		private void Start()
-		{
-			scheduler = new JobSchedulerUnified(32, 4);
-
-			// Example of adding jobs without scheduling them immediately
-			var testJob1 = new TestJob();
-			var testJob2 = new TestJobFor();
-			var testJob3 = new TestJobParallelFor();
-
-			var job1Index = scheduler.AddJob(testJob1);
-			var job2Index = scheduler.AddJob(testJob2, 100);
-			var job3Index = scheduler.AddJobParallel(testJob3, 1000, 64);
-
-			// Later in your code, you can schedule these jobs
-			scheduler.ScheduleJob(job1Index);
-			// Or schedule all at once
-			scheduler.ScheduleAll();
-		}
-
-		private void Update()
-		{
-			// Example usage with different job types (immediate scheduling)
-			var testJob         = new TestJob();
-			var testJobFor      = new TestJobFor();
-			var testParallelJob = new TestJobParallelFor();
-
-			// Schedule jobs immediately
-			scheduler.Schedule(testJob);
-			scheduler.Schedule(testJobFor, 100);
-			scheduler.ScheduleParallel(testParallelJob, 1000, 64);
-
-			// Wait for all jobs to complete
-			scheduler.CompleteAll();
-		}
-
-		private void OnDestroy()
-		{
-			// Ensure proper cleanup
-			scheduler.Dispose();
-		}
-	}
-	#endregion
 }
