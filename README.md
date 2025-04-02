@@ -20,7 +20,6 @@ This package requires the following dependencies:
 - **Unity.Burst**: For high-performance native code compilation
 - [**UniTask**](https://github.com/Cysharp/UniTask): For efficient asynchronous operations
 - [**ZLinq**](https://github.com/Cysharp/ZLinq): Used for allocation-free LINQ-like operations on collections
-- [**UnityRoslynUpdater**](https://github.com/DaZombieKiller/UnityRoslynUpdater): For updating Unity Roslyn to the latest version to use newer features.
 
 Add these dependencies to your project's `manifest.json`:
 
