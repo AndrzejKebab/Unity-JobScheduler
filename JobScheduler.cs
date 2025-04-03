@@ -19,18 +19,50 @@ namespace PatataGames.JobScheduler
 	}
 	
 	/// <summary>
+	///     Data structure for IJob implementations to be scheduled.
+	/// </summary>
+	/// <typeparam name="T">The job type, which must be a struct implementing IJob.</typeparam>
+	[BurstCompile]
+	public struct JobData<T> : IJobData where T: struct, IJob
+	{
+		/// <summary>
+		///     The job to be scheduled.
+		/// </summary>
+		public T         Job;
+		
+		/// <summary>
+		///     Optional job handle that must complete before this job can start.
+		/// </summary>
+		public JobHandle Dependency;
+		
+		/// <summary>
+		///     Schedules the job with the specified dependency.
+		/// </summary>
+		/// <returns>A JobHandle that can be used to track the job's completion.</returns>
+		public JobHandle Schedule()
+		{
+			return Job.Schedule(Dependency);
+		}
+	}
+	
+	/// <summary>
 	///     Specialized scheduler for IJob implementations.
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJob.</typeparam>
 	[BurstCompile]
-	public struct JobScheduler<T> : IDisposable
+	public struct JobScheduler<T> : IJobScheduler, IDisposable
 		where T : unmanaged, IJob
 	{
 		private JobSchedulerBase    baseScheduler;
 		private NativeList<JobData<T>> jobsList;
 
-		public JobScheduler(int capacity = 64,byte batchSize = 8)
+		/// <summary>
+		///     Initializes a new instance of the JobScheduler struct.
+		/// </summary>
+		/// <param name="capacity">Initial capacity for the job list. Default is 64.</param>
+		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
+		public JobScheduler(int capacity = 64,byte batchSize = 32)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
 			jobsList = new NativeList<JobData<T>>(capacity, Allocator.Persistent);
@@ -45,16 +77,24 @@ namespace PatataGames.JobScheduler
 			get => baseScheduler.BatchSize;
 			set => baseScheduler.BatchSize = value;
 		}
+		
+		/// <summary>
+		/// Gets the number of jobs that have been scheduled.
+		/// </summary>
+		/// <value>The count of uncompleted job handles being tracked by the base scheduler.</value>
+		public int ScheduledJobs => baseScheduler.JobHandlesCount;
 
 		/// <summary>
-		///     Returns the number of tracked job handles.
+		/// Gets the number of jobs in the queue waiting to be scheduled.
 		/// </summary>
-		public int JobHandlesCount => baseScheduler.JobHandlesCount;
+		/// <value>The length of the jobs list that contains pending jobs.</value>
+		public int JobsToSchedule => jobsList.Length;
 
 		/// <summary>
-		///     Returns the number of jobs in the queue waiting to be scheduled.
+		/// Gets the total number of jobs being managed by the scheduler.
 		/// </summary>
-		public int JobsCount => jobsList.Length;
+		/// <value>The sum of jobs waiting to be scheduled and jobs that are currently running but not completed.</value>
+		public int JobsCount => jobsList.Length + baseScheduler.JobHandlesCount;
 
 		/// <summary>
 		///     Checks if all scheduled jobs have been completed.
@@ -84,10 +124,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <param name="handle">The job handle to track.</param>
 		[BurstCompile]
-		public void ScheduleJob(JobHandle handle)
-		{
-			baseScheduler.AddJobHandle(handle);
-		}
+		public void AddJobHandle(JobHandle handle) => baseScheduler.AddJobHandle(handle);
 
 		/// <summary>
 		///     Schedules all queued jobs in batches, yielding between batches to prevent
@@ -95,7 +132,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are scheduled.</returns>
 		[BurstCompile]
-		public async UniTask ScheduleAll()
+		public async UniTask ScheduleJobsAsync()
 		{
 			byte count = 0;
 
@@ -121,20 +158,14 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
 		[BurstCompile]
-		public UniTask Complete()
-		{
-			return baseScheduler.Complete();
-		}
+		public UniTask CompleteAsync() => baseScheduler.CompleteAsync();
 
 		/// <summary>
 		///     Completes all tracked jobs without yielding.
 		///     Use this when immediate completion is required.
 		/// </summary>
 		[BurstCompile]
-		public void CompleteAll()
-		{
-			baseScheduler.CompleteAll();
-		}
+		public void CompleteImmediate() => baseScheduler.CompleteImmediate();
 
 		/// <summary>
 		///     Completes all jobs and releases resources.

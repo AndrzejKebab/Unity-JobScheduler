@@ -3,7 +3,7 @@ using Cysharp.Threading.Tasks;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
-using ZLinq;
+using UnityEngine;
 
 namespace PatataGames.JobScheduler
 {
@@ -17,7 +17,12 @@ namespace PatataGames.JobScheduler
 		private NativeList<JobHandle> jobHandles;
 		private byte                  batchSize;
 
-		public JobSchedulerBase(int capacity = 64, byte batchSize = 8)
+		/// <summary>
+		///     Initializes a new instance of the JobSchedulerBase struct.
+		/// </summary>
+		/// <param name="capacity">Initial capacity for the job handles list. Default is 64.</param>
+		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
+		public JobSchedulerBase(int capacity = 64, byte batchSize = 32)
 		{
 			jobHandles     = new NativeList<JobHandle>(capacity, Allocator.Persistent);
 			this.batchSize = batchSize;
@@ -25,12 +30,12 @@ namespace PatataGames.JobScheduler
 
 		/// <summary>
 		///     Controls how many jobs are processed before yielding back to the main thread.
-		///     Default is 8.
+		///     Default is 32.
 		/// </summary>
 		public byte BatchSize
 		{
 			get => batchSize;
-			set => batchSize = value <= 0 ? (byte)8 : value;
+			set => batchSize = value <= 0 ? (byte)32 : value;
 		}
 
 		/// <summary>
@@ -48,25 +53,31 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
 		[BurstCompile]
-		public async UniTask Complete()
+		public async UniTask CompleteAsync()
 		{
-			byte count     = 0;
-			var  completed = new NativeList<int>(Allocator.Persistent);
-
-			for (var i = 0; i < jobHandles.Length; i++)
+			// Early exit if no jobs to process
+			if (jobHandles.Length == 0) return;
+			
+			byte batchCount = 0;
+			
+			// Process from the end to make removal safer
+			for (var i = jobHandles.Length - 1; i >= 0; i--)
 			{
-				count++;
+				// Only process jobs that are already completed
+				if (!jobHandles[i].IsCompleted) continue;
+
+				// Complete the job and remove it
 				jobHandles[i].Complete();
-				completed.Add(i);
+				jobHandles.RemoveAtSwapBack(i);
 
-				if (count < BatchSize) continue;
+				// Increment batch counter
+				batchCount++;
+
+				// Yield after processing a batch to prevent blocking
+				if (batchCount < BatchSize) continue;
 				await UniTask.Yield();
-				count = 0;
+				batchCount = 0;
 			}
-
-			for (var i = completed.Length - 1; i >= 0; i--) jobHandles.RemoveAt(completed[i]);
-
-			completed.Dispose();
 		}
 
 		/// <summary>
@@ -74,10 +85,18 @@ namespace PatataGames.JobScheduler
 		///     Use this when immediate completion is required.
 		/// </summary>
 		[BurstCompile]
-		public void CompleteAll()
+		public void CompleteImmediate()
 		{
-			for (var i = 0; i < jobHandles.Length; i++) jobHandles[i].Complete();
-			jobHandles.Clear();
+			try
+			{
+				for (var i = 0; i < jobHandles.Length; i++) jobHandles[i].Complete();
+				jobHandles.Clear();
+			}
+			catch (Exception e)
+			{
+				Debug.LogWarning("Error completing jobs " + e);
+				throw;
+			}
 		}
 
 		/// <summary>
@@ -89,17 +108,31 @@ namespace PatataGames.JobScheduler
 		/// <summary>
 		///     Checks if all scheduled jobs have been completed.
 		/// </summary>
-		/// <value>
+		/// <returns>
 		///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
-		/// </value>
-		public bool AreJobsCompleted => jobHandles.AsValueEnumerable().All(handle => handle.IsCompleted);
+		/// </returns>
+		public bool AreJobsCompleted
+		{
+			get
+			{
+				foreach (JobHandle handle in jobHandles)
+				{
+					if (!handle.IsCompleted)
+					{
+						return false;
+					}
+				}
+
+				return true;
+			}
+		}
 
 		/// <summary>
 		///     Completes all jobs and releases resources.
 		/// </summary>
 		public void Dispose()
 		{
-			CompleteAll();
+			CompleteImmediate();
 			jobHandles.Dispose();
 		}
 	}
