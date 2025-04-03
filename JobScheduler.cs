@@ -6,12 +6,27 @@ using Unity.Jobs;
 
 namespace PatataGames.JobScheduler
 {
+	/// <summary>
+	///     Data structure for IJob implementations to be scheduled.
+	/// </summary>
+	/// <typeparam name="T">The job type, which must be a struct implementing IJob.</typeparam>
 	[BurstCompile]
 	public struct JobData<T> : IJobData where T: struct, IJob
 	{
+		/// <summary>
+		///     The job to be scheduled.
+		/// </summary>
 		public T         Job;
+		
+		/// <summary>
+		///     Optional job handle that must complete before this job can start.
+		/// </summary>
 		public JobHandle Dependency;
 		
+		/// <summary>
+		///     Schedules the job with the specified dependency.
+		/// </summary>
+		/// <returns>A JobHandle that can be used to track the job's completion.</returns>
 		public JobHandle Schedule()
 		{
 			return Job.Schedule(Dependency);
@@ -30,7 +45,12 @@ namespace PatataGames.JobScheduler
 		private JobSchedulerBase    baseScheduler;
 		private NativeList<JobData<T>> jobsList;
 
-		public JobScheduler(int capacity = 64,byte batchSize = 8)
+		/// <summary>
+		///     Initializes a new instance of the JobScheduler struct.
+		/// </summary>
+		/// <param name="capacity">Initial capacity for the job list. Default is 64.</param>
+		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
+		public JobScheduler(int capacity = 64,byte batchSize = 32)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
 			jobsList = new NativeList<JobData<T>>(capacity, Allocator.Persistent);

@@ -3,6 +3,10 @@ using Unity.Jobs;
 
 namespace PatataGames.JobScheduler
 {
+	/// <summary>
+	///     Defines the common interface for all job schedulers.
+	///     Provides methods and properties for scheduling, tracking, and completing Unity jobs.
+	/// </summary>
 	public interface IJobScheduler
 	{		
 		public byte BatchSize        { get; }

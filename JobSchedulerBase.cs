@@ -17,6 +17,11 @@ namespace PatataGames.JobScheduler
 		private NativeList<JobHandle> jobHandles;
 		private byte                  batchSize;
 
+		/// <summary>
+		///     Initializes a new instance of the JobSchedulerBase struct.
+		/// </summary>
+		/// <param name="capacity">Initial capacity for the job handles list. Default is 64.</param>
+		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
 		public JobSchedulerBase(int capacity = 64, byte batchSize = 32)
 		{
 			jobHandles     = new NativeList<JobHandle>(capacity, Allocator.Persistent);

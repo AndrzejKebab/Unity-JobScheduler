@@ -6,13 +6,32 @@ using Unity.Jobs;
 
 namespace PatataGames.JobScheduler
 {
+	/// <summary>
+	///     Data structure for IJobFor implementations to be scheduled.
+	/// </summary>
+	/// <typeparam name="T">The job type, which must be a struct implementing IJobFor.</typeparam>
 	[BurstCompile]
 	public struct JobForData<T> : IJobData where T : struct, IJobFor
 	{
+		/// <summary>
+		///     The job to be scheduled.
+		/// </summary>
 		public T         Job;
+		
+		/// <summary>
+		///     The length of the array to process.
+		/// </summary>
 		public int       ArrayLength;
+		
+		/// <summary>
+		///     Optional job handle that must complete before this job can start.
+		/// </summary>
 		public JobHandle Dependency;
 		
+		/// <summary>
+		///     Schedules the job with the specified array length and dependency.
+		/// </summary>
+		/// <returns>A JobHandle that can be used to track the job's completion.</returns>
 		public JobHandle Schedule()
 		{
 			return Job.Schedule(ArrayLength, Dependency);
@@ -31,7 +50,12 @@ namespace PatataGames.JobScheduler
 		private JobSchedulerBase       baseScheduler;
 		private NativeList<JobForData<T>> jobList;
 
-		public JobForScheduler(int capacity = 64, byte batchSize = 8)
+		/// <summary>
+		///     Initializes a new instance of the JobForScheduler struct.
+		/// </summary>
+		/// <param name="capacity">Initial capacity for the job list. Default is 64.</param>
+		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
+		public JobForScheduler(int capacity = 64, byte batchSize = 32)
 		{
 			baseScheduler = new JobSchedulerBase(capacity, batchSize);
 			jobList = new NativeList<JobForData<T>>(capacity, Allocator.Persistent);
@@ -53,10 +77,14 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		public int ScheduledJobs => baseScheduler.JobHandlesCount;
 
+		/// <summary>
+		///     Returns the number of jobs in the queue waiting to be scheduled.
+		/// </summary>
 		public int JobsToSchedule => jobList.Length;
 		
 		/// <summary>
-		///     Returns the number of jobs in the queue waiting to be scheduled.
+		///     Returns the total number of jobs being managed by the scheduler.
+		///     This includes both jobs waiting to be scheduled and jobs that are currently running.
 		/// </summary>
 		public int JobsCount => JobsToSchedule + ScheduledJobs;
 
