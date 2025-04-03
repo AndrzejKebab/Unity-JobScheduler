@@ -6,6 +6,20 @@ using Unity.Jobs;
 
 namespace PatataGames.JobScheduler
 {
+	[BurstCompile]
+	public struct JobParallelForData<T> : IJobData where T: struct, IJobParallelFor
+	{
+		public T         Job;
+		public int       ArrayLength;
+		public int       InnerBatchSize;
+		public JobHandle Dependency;
+		
+		public JobHandle Schedule()
+		{
+			return Job.Schedule(ArrayLength, InnerBatchSize, Dependency);
+		}
+	}
+	
 	/// <summary>
 	///     Data structure for IJobParallelFor implementations to be scheduled.
 	/// </summary>
