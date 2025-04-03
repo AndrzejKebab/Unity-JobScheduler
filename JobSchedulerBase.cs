@@ -4,7 +4,6 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
-using ZLinq;
 
 namespace PatataGames.JobScheduler
 {
@@ -18,7 +17,7 @@ namespace PatataGames.JobScheduler
 		private NativeList<JobHandle> jobHandles;
 		private byte                  batchSize;
 
-		public JobSchedulerBase(int capacity = 64, byte batchSize = 8)
+		public JobSchedulerBase(int capacity = 64, byte batchSize = 32)
 		{
 			jobHandles     = new NativeList<JobHandle>(capacity, Allocator.Persistent);
 			this.batchSize = batchSize;
@@ -26,12 +25,12 @@ namespace PatataGames.JobScheduler
 
 		/// <summary>
 		///     Controls how many jobs are processed before yielding back to the main thread.
-		///     Default is 8.
+		///     Default is 32.
 		/// </summary>
 		public byte BatchSize
 		{
 			get => batchSize;
-			set => batchSize = value <= 0 ? (byte)8 : value;
+			set => batchSize = value <= 0 ? (byte)32 : value;
 		}
 
 		/// <summary>
@@ -49,7 +48,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
 		[BurstCompile]
-		public async UniTask Complete()
+		public async UniTask CompleteAsync()
 		{
 			// Early exit if no jobs to process
 			if (jobHandles.Length == 0) return;
@@ -81,7 +80,7 @@ namespace PatataGames.JobScheduler
 		///     Use this when immediate completion is required.
 		/// </summary>
 		[BurstCompile]
-		public void CompleteAll()
+		public void CompleteImmediate()
 		{
 			try
 			{
@@ -104,17 +103,31 @@ namespace PatataGames.JobScheduler
 		/// <summary>
 		///     Checks if all scheduled jobs have been completed.
 		/// </summary>
-		/// <value>
+		/// <returns>
 		///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
-		/// </value>
-		public bool AreJobsCompleted => jobHandles.AsValueEnumerable().All(handle => handle.IsCompleted);
+		/// </returns>
+		public bool AreJobsCompleted
+		{
+			get
+			{
+				foreach (JobHandle handle in jobHandles)
+				{
+					if (!handle.IsCompleted)
+					{
+						return false;
+					}
+				}
+
+				return true;
+			}
+		}
 
 		/// <summary>
 		///     Completes all jobs and releases resources.
 		/// </summary>
 		public void Dispose()
 		{
-			CompleteAll();
+			CompleteImmediate();
 			jobHandles.Dispose();
 		}
 	}

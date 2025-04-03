@@ -25,7 +25,7 @@ namespace PatataGames.JobScheduler
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobFor.</typeparam>
 	[BurstCompile]
-	public struct JobForScheduler<T>  : IDisposable 
+	public struct JobForScheduler<T>  : IJobScheduler, IDisposable 
 		where T : unmanaged, IJobFor
 	{
 		private JobSchedulerBase       baseScheduler;
@@ -47,15 +47,18 @@ namespace PatataGames.JobScheduler
 			set => baseScheduler.BatchSize = value;
 		}
 
+
 		/// <summary>
 		///     Returns the number of tracked job handles.
 		/// </summary>
-		public int JobHandlesCount => baseScheduler.JobHandlesCount;
+		public int ScheduledJobs => baseScheduler.JobHandlesCount;
 
+		public int JobsToSchedule => jobList.Length;
+		
 		/// <summary>
 		///     Returns the number of jobs in the queue waiting to be scheduled.
 		/// </summary>
-		public int JobsCount => jobList.Length;
+		public int JobsCount => JobsToSchedule + ScheduledJobs;
 
 		/// <summary>
 		///     Checks if all scheduled jobs have been completed.
@@ -87,7 +90,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <param name="handle">The job handle to track.</param>
 		[BurstCompile]
-		public void ScheduleJob(JobHandle handle)
+		public void AddJobHandle(JobHandle handle)
 		{
 			baseScheduler.AddJobHandle(handle);
 		}
@@ -98,7 +101,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are scheduled.</returns>
 		[BurstCompile]
-		public async UniTask ScheduleAll()
+		public async UniTask ScheduleJobsAsync()
 		{
 			byte count = 0;
 
@@ -124,20 +127,19 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
 		[BurstCompile]
-		public UniTask Complete()
+		public UniTask CompleteAsync()
 		{
-			return baseScheduler.Complete();
+			return baseScheduler.CompleteAsync();
 		}
-
 
 		/// <summary>
 		///     Completes all tracked jobs without yielding.
 		///     Use this when immediate completion is required.
 		/// </summary>
 		[BurstCompile]
-		public void CompleteAll()
+		public void CompleteImmediate()
 		{
-			baseScheduler.CompleteAll();
+			baseScheduler.CompleteImmediate();
 		}
 
 		/// <summary>

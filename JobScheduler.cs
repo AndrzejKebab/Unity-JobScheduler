@@ -24,7 +24,7 @@ namespace PatataGames.JobScheduler
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJob.</typeparam>
 	[BurstCompile]
-	public struct JobScheduler<T> : IDisposable
+	public struct JobScheduler<T> : IJobScheduler, IDisposable
 		where T : unmanaged, IJob
 	{
 		private JobSchedulerBase    baseScheduler;
@@ -45,16 +45,24 @@ namespace PatataGames.JobScheduler
 			get => baseScheduler.BatchSize;
 			set => baseScheduler.BatchSize = value;
 		}
+		
+		/// <summary>
+		/// Gets the number of jobs that have been scheduled.
+		/// </summary>
+		/// <value>The count of uncompleted job handles being tracked by the base scheduler.</value>
+		public int ScheduledJobs => baseScheduler.JobHandlesCount;
 
 		/// <summary>
-		///     Returns the number of tracked job handles.
+		/// Gets the number of jobs in the queue waiting to be scheduled.
 		/// </summary>
-		public int JobHandlesCount => baseScheduler.JobHandlesCount;
+		/// <value>The length of the jobs list that contains pending jobs.</value>
+		public int JobsToSchedule => jobsList.Length;
 
 		/// <summary>
-		///     Returns the number of jobs in the queue waiting to be scheduled.
+		/// Gets the total number of jobs being managed by the scheduler.
 		/// </summary>
-		public int JobsCount => jobsList.Length;
+		/// <value>The sum of jobs waiting to be scheduled and jobs that are currently running but not completed.</value>
+		public int JobsCount => jobsList.Length + baseScheduler.JobHandlesCount;
 
 		/// <summary>
 		///     Checks if all scheduled jobs have been completed.
@@ -84,10 +92,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <param name="handle">The job handle to track.</param>
 		[BurstCompile]
-		public void ScheduleJob(JobHandle handle)
-		{
-			baseScheduler.AddJobHandle(handle);
-		}
+		public void AddJobHandle(JobHandle handle) => baseScheduler.AddJobHandle(handle);
 
 		/// <summary>
 		///     Schedules all queued jobs in batches, yielding between batches to prevent
@@ -95,7 +100,7 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are scheduled.</returns>
 		[BurstCompile]
-		public async UniTask ScheduleAll()
+		public async UniTask ScheduleJobsAsync()
 		{
 			byte count = 0;
 
@@ -121,20 +126,14 @@ namespace PatataGames.JobScheduler
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
 		[BurstCompile]
-		public UniTask Complete()
-		{
-			return baseScheduler.Complete();
-		}
+		public UniTask CompleteAsync() => baseScheduler.CompleteAsync();
 
 		/// <summary>
 		///     Completes all tracked jobs without yielding.
 		///     Use this when immediate completion is required.
 		/// </summary>
 		[BurstCompile]
-		public void CompleteAll()
-		{
-			baseScheduler.CompleteAll();
-		}
+		public void CompleteImmediate() => baseScheduler.CompleteImmediate();
 
 		/// <summary>
 		///     Completes all jobs and releases resources.
