@@ -45,7 +45,7 @@ namespace PatataGames.JobScheduler
 	public struct TestJobFor : IJobFor
 	{
 		// Input data
-		[ReadOnly] public NativeArray<float> Input;
+		[ReadOnly]  public NativeArray<float>           Input;
 
 		// Parameters
 		public float Multiplier;
@@ -66,7 +66,7 @@ namespace PatataGames.JobScheduler
 	public struct TestJobParallelFor : IJobParallelFor
 	{
 		// Input data
-		[ReadOnly] public NativeArray<Vector3> Positions;
+		[ReadOnly]  public NativeArray<Vector3>           Positions;
 
 		// Parameters
 		public float   DeltaTime;
@@ -114,13 +114,13 @@ namespace PatataGames.JobScheduler
 		// Timing
 		private Stopwatch sw;
 
-		private NativeArray<float> a;
-		private NativeArray<float> b;
+		private NativeArray<float>             a;
+		private NativeArray<float>             b;
 		
 		private void Awake()
 		{
-			Debug.Log("[JobScheduler] Initializing scheduler with capacity 300 and batch size 16");
-			scheduler = new JobSchedulerUnified(300, 8);
+			Debug.Log("[JobScheduler] Initializing scheduler");
+			scheduler = new JobSchedulerUnified(300, 16);
 			sw = new Stopwatch();
 		}
 
