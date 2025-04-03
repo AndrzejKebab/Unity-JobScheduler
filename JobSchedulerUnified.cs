@@ -9,12 +9,7 @@ using ZLinq;
 
 namespace PatataGames.JobScheduler
 {
-	public interface IJobData
-	{
-		public JobHandle Schedule();
-	}
-
-    /// <summary>
+	/// <summary>
     ///     Unified job scheduler that works with different job types through a common interface.
     ///     Supports both immediate scheduling and storing jobs for later scheduling.
     /// </summary>
