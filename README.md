@@ -1,3 +1,4 @@
+
 # Unity JobScheduler
 
 ## Warning
@@ -18,7 +19,6 @@ This package requires the following dependencies:
 - **Unity.Collections**: Provides NativeList and other Burst-compatible collections
 - **Unity.Burst**: For high-performance native code compilation
 - [**UniTask**](https://github.com/Cysharp/UniTask): For efficient asynchronous operations
-- [**ZLinq**](https://github.com/Cysharp/ZLinq): Used for allocation-free LINQ-like operations on collections
 
 Add these dependencies to your project's `manifest.json`:
 
@@ -29,7 +29,6 @@ Add these dependencies to your project's `manifest.json`:
     "com.unity.collections": "1.5.1",
     "com.unity.jobs": "0.70.0-preview.7",
     "com.cysharp.unitask": "2.3.3",
-    "com.zlinq": "1.0.0"
   },
   "scopedRegistries": [
     {
@@ -37,7 +36,6 @@ Add these dependencies to your project's `manifest.json`:
       "url": "https://package.openupm.com",
       "scopes": [
         "com.cysharp.unitask",
-        "com.zlinq"
       ]
     }
   ]
@@ -51,6 +49,40 @@ Add these dependencies to your project's `manifest.json`:
 - **Memory Safety**: Proper disposal of native collections
 - **Async/Await Support**: Uses UniTask for efficient asynchronous operations
 - **Specialized Schedulers**: Optimized implementations for different job types
+- **Interface-Based Design**: Consistent API across all scheduler types through interfaces
+
+## Core Interfaces
+
+### IJobData
+
+The core interface that standardizes job scheduling operations:
+
+```csharp
+public interface IJobData
+{
+    public JobHandle Schedule();
+}
+```
+
+### IJobScheduler
+
+Common interface implemented by all job schedulers:
+
+```csharp
+public interface IJobScheduler
+{		
+	public byte BatchSize        { get; }
+	public int  ScheduledJobs    { get; }
+	public int  JobsToSchedule   { get; }
+	public int  JobsCount        { get; }
+	public bool AreJobsCompleted { get; }
+
+	public void    AddJobHandle(JobHandle handle);
+	public UniTask ScheduleJobsAsync();
+	public UniTask CompleteAsync();
+	public void    CompleteImmediate();
+}
+```
 
 ## Scheduler Types
 
@@ -70,7 +102,7 @@ public struct JobSchedulerBase : IDisposable
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `BatchSize` | `byte` | Controls how many jobs are processed before yielding back to the main thread. Default is 8. |
+| `BatchSize` | `byte` | Controls how many jobs are processed before yielding back to the main thread. Default is 32. |
 | `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 | `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
 
@@ -79,9 +111,30 @@ public struct JobSchedulerBase : IDisposable
 | Method | Return Type | Description |
 |--------|-------------|-------------|
 | `AddJobHandle(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
-| `Complete()` | `UniTask` | Completes all tracked jobs in batches, yielding between batches. |
-| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. |
+| `CompleteAsync()` | `UniTask` | Completes all tracked jobs in batches, yielding between batches. |
+| `CompleteImmediate()` | `void` | Completes all tracked jobs without yielding. |
 | `Dispose()` | `void` | Completes all jobs and releases resources. |
+
+### JobData<T>
+
+Data structure for wrapping IJob implementations:
+
+```csharp
+public struct JobData<T> : IJobData where T : struct, IJob
+```
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `Job` | `T` | The job to be scheduled. |
+| `Dependency` | `JobHandle` | Optional job handle that must complete before this job can start. |
+
+#### Methods
+
+| Method | Return Type | Description |
+|--------|-------------|-------------|
+| `Schedule()` | `JobHandle` | Schedules the job with the specified dependency. |
 
 ### JobScheduler\<T>
 
@@ -91,7 +144,7 @@ Specialized scheduler for `IJob` implementations:
 - Batched scheduling and completion
 
 ```csharp
-public struct JobScheduler<T> : IDisposable where T : unmanaged, IJob
+public struct JobScheduler<T> : IJobScheduler, IDisposable where T : unmanaged, IJob
 ```
 
 #### Properties
@@ -99,19 +152,20 @@ public struct JobScheduler<T> : IDisposable where T : unmanaged, IJob
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
-| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
-| `JobsCount` | `int` | Returns the number of jobs in the list waiting to be scheduled. |
+| `ScheduledJobs` | `int` | Returns the number of jobs that have been scheduled. |
+| `JobsToSchedule` | `int` | Returns the number of jobs in the queue waiting to be scheduled. |
+| `JobsCount` | `int` | Returns the total number of jobs being managed by the scheduler. |
 | `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `AddJob(T job, JobHandle dependency = default)` | `void` | Adds a job to the list for scheduling with optional dependency. |
+| `AddJob(T job, JobHandle dependency = default)` | `void` | Adds a job to the queue for scheduling with optional dependency. |
 | `AddJobHandle(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
-| `ScheduleAll()` | `UniTask` | Schedules all listed jobs in batches, yielding between batches. |
-| `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
-| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
+| `ScheduleJobsAsync()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
+| `CompleteAsync()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
+| `CompleteImmediate()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
 | `Dispose()` | `void` | Completes all jobs and releases resources. |
 
 ### JobForScheduler\<T>
@@ -122,7 +176,7 @@ Specialized scheduler for `IJobFor` implementations:
 - Configurable array length per job
 
 ```csharp
-public struct JobForScheduler<T> : IDisposable where T : unmanaged, IJobFor
+public struct JobForScheduler<T> : IJobScheduler, IDisposable where T : unmanaged, IJobFor
 ```
 
 #### Properties
@@ -130,19 +184,20 @@ public struct JobForScheduler<T> : IDisposable where T : unmanaged, IJobFor
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
-| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
-| `JobsCount` | `int` | Returns the number of jobs in the list waiting to be scheduled. |
+| `ScheduledJobs` | `int` | Returns the number of jobs that have been scheduled. |
+| `JobsToSchedule` | `int` | Returns the number of jobs in the queue waiting to be scheduled. |
+| `JobsCount` | `int` | Returns the total number of jobs being managed by the scheduler. |
 | `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `AddJob(T job, int arrayLength, JobHandle dependency = default)` | `void` | Adds a job to the list with specified array length and optional dependency. |
+| `AddJob(T job, int arrayLength, JobHandle dependency = default)` | `void` | Adds a job to the queue with specified array length and optional dependency. |
 | `AddJobHandle(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
-| `ScheduleAll()` | `UniTask` | Schedules all listed jobs in batches, yielding between batches. |
-| `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
-| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
+| `ScheduleJobsAsync()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
+| `CompleteAsync()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
+| `CompleteImmediate()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
 | `Dispose()` | `void` | Completes all jobs and releases resources. |
 
 ### JobParallelForScheduler\<T>
@@ -153,7 +208,7 @@ Specialized scheduler for `IJobParallelFor` implementations:
 - Configurable array length and inner batch size per job
 
 ```csharp
-public struct JobParallelForScheduler<T> : IDisposable where T : unmanaged, IJobParallelFor
+public struct JobParallelForScheduler<T> : IJobScheduler, IDisposable where T : unmanaged, IJobParallelFor
 ```
 
 #### Properties
@@ -161,19 +216,20 @@ public struct JobParallelForScheduler<T> : IDisposable where T : unmanaged, IJob
 | Property | Type | Description |
 |----------|------|-------------|
 | `BatchSize` | `byte` | Controls how many jobs are processed before yielding. Delegates to base scheduler. |
-| `JobHandlesCount` | `int` | Returns the number of tracked job handles. |
-| `JobsCount` | `int` | Returns the number of jobs in the list waiting to be scheduled. |
+| `ScheduledJobs` | `int` | Returns the number of jobs that have been scheduled. |
+| `JobsToSchedule` | `int` | Returns the number of jobs in the queue waiting to be scheduled. |
+| `JobsCount` | `int` | Returns the total number of jobs being managed by the scheduler. |
 | `AreJobsCompleted` | `bool` | Returns true if all tracked jobs have completed. |
 
 #### Methods
 
 | Method | Return Type | Description |
 |--------|-------------|-------------|
-| `AddJob(T job, int arrayLength, int innerBatchSize = 64, JobHandle dependency = default)` | `void` | Adds a job to the list with specified array length, inner batch size, and optional dependency. |
+| `AddJob(T job, int arrayLength, int innerBatchSize = 64, JobHandle dependency = default)` | `void` | Adds a job to the queue with specified array length, inner batch size, and optional dependency. |
 | `AddJobHandle(JobHandle handle)` | `void` | Adds an external job handle to the tracking list. |
-| `ScheduleAll()` | `UniTask` | Schedules all listed jobs in batches, yielding between batches. |
-| `Complete()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
-| `CompleteAll()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
+| `ScheduleJobsAsync()` | `UniTask` | Schedules all queued jobs in batches, yielding between batches. |
+| `CompleteAsync()` | `UniTask` | Completes all tracked jobs in batches. Delegates to base scheduler. |
+| `CompleteImmediate()` | `void` | Completes all tracked jobs without yielding. Delegates to base scheduler. |
 | `Dispose()` | `void` | Completes all jobs and releases resources. |
 
 ## Usage Examples
@@ -196,13 +252,13 @@ struct MyJob : IJob
 // Create a scheduler
 var scheduler = new JobScheduler<MyJob>();
 
-// Add jobs
+// Add jobs with optional dependencies
 scheduler.AddJob(new MyJob());
-scheduler.AddJob(new MyJob());
+scheduler.AddJob(new MyJob(), dependencyHandle);
 
 // Schedule and complete
-await scheduler.ScheduleAll();
-await scheduler.Complete();
+await scheduler.ScheduleJobsAsync();
+await scheduler.CompleteAsync();
 
 // Dispose when done
 scheduler.Dispose();
@@ -226,12 +282,12 @@ struct MyJobFor : IJobFor
 // Create a scheduler
 var scheduler = new JobForScheduler<MyJobFor>();
 
-// Add jobs with array length
-scheduler.AddJob(new MyJobFor(), arrayLength: 100);
+// Add jobs with array length and optional dependency
+scheduler.AddJob(new MyJobFor(), arrayLength: 100, dependency: default);
 
 // Schedule and complete
-await scheduler.ScheduleAll();
-await scheduler.Complete();
+await scheduler.ScheduleJobsAsync();
+await scheduler.CompleteAsync();
 
 // Dispose when done
 scheduler.Dispose();
@@ -255,12 +311,12 @@ struct MyParallelJob : IJobParallelFor
 // Create a scheduler
 var scheduler = new JobParallelForScheduler<MyParallelJob>();
 
-// Add jobs with array length and inner batch size
+// Add jobs with array length, inner batch size, and optional dependency
 scheduler.AddJob(new MyParallelJob(), arrayLength: 1000, innerBatchSize: 64);
 
 // Schedule and complete
-await scheduler.ScheduleAll();
-await scheduler.Complete();
+await scheduler.ScheduleJobsAsync();
+await scheduler.CompleteAsync();
 
 // Dispose when done
 scheduler.Dispose();
@@ -270,7 +326,7 @@ scheduler.Dispose();
 
 ### Using External Job Handles
 
-All scheduler types support tracking external job handles, useful if you want to schedule job immediately:
+All scheduler types support tracking external job handles:
 
 ```csharp
 using PatataGames.JobScheduler;
@@ -283,17 +339,18 @@ var scheduler = new JobScheduler<MyJob>();
 JobHandle externalHandle = someJob.Schedule();
 
 // Add the external handle to the scheduler
-scheduler.ScheduleJob(externalHandle);
+scheduler.AddJobHandle(externalHandle);
 
 // Complete all jobs including the external one
-await scheduler.Complete();
+await scheduler.CompleteAsync();
 ```
 
 ### Controlling Batch Size
 
 ```csharp
-var scheduler = new JobScheduler<MyJob>();
-scheduler.BatchSize = 16; // Process 16 jobs before yielding
+var scheduler = new JobScheduler<MyJob>(capacity: 64, batchSize: 16);
+// Or set it after creation
+scheduler.BatchSize = 32; // Process 32 jobs before yielding
 ```
 
 ### Checking Job Completion Status
@@ -301,17 +358,19 @@ scheduler.BatchSize = 16; // Process 16 jobs before yielding
 ```csharp
 using PatataGames.JobScheduler;
 
-var baseScheduler = new JobSchedulerBase();
-// Add job handles...
+var scheduler = new JobScheduler<MyJob>();
+// Add and schedule jobs...
 
 // Check if all jobs are completed
-if (baseScheduler.AreJobsCompleted)
+if (scheduler.AreJobsCompleted)
 {
     // All jobs are done
 }
 
-// Check how many job handles are being tracked
-int pendingJobs = baseScheduler.JobHandlesCount;
+// Check how many jobs are queued vs scheduled
+int pendingJobs = scheduler.JobsCount;
+int scheduledJobs = scheduler.ScheduledJobs;
+int queuedJobs = scheduler.JobsToSchedule;
 ```
 
 ### Immediate Completion
@@ -321,7 +380,7 @@ var scheduler = new JobScheduler<MyJob>();
 // Add and schedule jobs...
 
 // Complete all jobs immediately without yielding
-scheduler.CompleteAll();
+scheduler.CompleteImmediate();
 ```
 
 ## Performance Considerations
@@ -336,8 +395,9 @@ scheduler.CompleteAll();
 
 ## Implementation Notes
 
-- The system uses composition rather than inheritance, with specialized schedulers delegating common functionality to `JobSchedulerBase`.
+- The system uses a common interface (`IJobScheduler`) and composition rather than inheritance.
 - All schedulers implement `IDisposable` to ensure proper cleanup of native collections.
+- Job data structures implement `IJobData` to ensure consistent scheduling behavior.
 - `UniTask` integration allows for efficient asynchronous operation without blocking the main thread.
 - The `[BurstCompile]` attribute is applied to methods that can benefit from Burst compilation.
 
