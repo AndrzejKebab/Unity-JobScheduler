@@ -1,5 +1,5 @@
 ﻿using System;
-using Cysharp.Threading.Tasks;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
@@ -10,10 +10,15 @@ namespace PatataGames.JobScheduler
 	///     Base job scheduler that provides common functionality for managing Unity job handles.
 	///     Handles batched completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
+	[BurstCompile]
 	public struct JobSchedulerBase : IDisposable
 	{
 		private NativeList<JobHandle> jobHandles;
 		private byte                  batchSize;
+		
+		public delegate void OnAllJobsComplete();
+
+		public static OnAllJobsComplete AllJobsComplete;
 
 		/// <summary>
 		///     Initializes a new instance of the JobSchedulerBase struct.
@@ -22,8 +27,9 @@ namespace PatataGames.JobScheduler
 		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
 		public JobSchedulerBase(int capacity = 64, byte batchSize = 32)
 		{
-			jobHandles     = new NativeList<JobHandle>(capacity, Allocator.Persistent);
-			this.batchSize = batchSize;
+			jobHandles      = new NativeList<JobHandle>(capacity, Allocator.Persistent);
+			this.batchSize  = batchSize;
+			AllJobsComplete = null;
 		}
 
 		/// <summary>
@@ -50,7 +56,12 @@ namespace PatataGames.JobScheduler
 		///     blocking the main thread for too long.
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
-		public async UniTask CompleteAsync()
+		public void CompleteAsync()
+		{
+			CompleteBurst(ref jobHandles, BatchSize);
+		}
+		
+		private static void CompleteBurst(ref NativeList<JobHandle> jobHandles, byte batchSize)
 		{
 			// Early exit if no jobs to process
 			if (jobHandles.Length == 0) return;
@@ -66,15 +77,16 @@ namespace PatataGames.JobScheduler
 				// Complete the job and remove it
 				jobHandles[i].Complete();
 				jobHandles.RemoveAtSwapBack(i);
-
+				
 				// Increment batch counter
 				batchCount++;
 
 				// Yield after processing a batch to prevent blocking
-				if (batchCount < BatchSize) continue;
-				await UniTask.Yield();
+				if (batchCount < batchSize) continue;
 				batchCount = 0;
 			}
+			jobHandles.Clear();
+			AllJobsComplete?.Invoke();
 		}
 
 		/// <summary>

@@ -1,5 +1,5 @@
 ﻿using System;
-using Cysharp.Threading.Tasks;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 
@@ -41,7 +41,8 @@ namespace PatataGames.JobScheduler
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobFor.</typeparam>
-	public struct JobForScheduler<T>  : IJobScheduler, IDisposable 
+	[BurstCompile]
+	public struct JobForScheduler<T>  : IDisposable 
 		where T : unmanaged, IJobFor
 	{
 		private JobSchedulerBase       baseScheduler;
@@ -54,8 +55,8 @@ namespace PatataGames.JobScheduler
 		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
 		public JobForScheduler(int capacity = 64, byte batchSize = 32)
 		{
-			baseScheduler = new JobSchedulerBase(capacity, batchSize);
-			jobQueue = new NativeQueue<JobForData<T>>(Allocator.Persistent);
+			baseScheduler   = new JobSchedulerBase(capacity, batchSize);
+			jobQueue        = new NativeQueue<JobForData<T>>(Allocator.Persistent);
 		}
 
 		/// <summary>
@@ -123,12 +124,18 @@ namespace PatataGames.JobScheduler
 		///     blocking the main thread for too long.
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are scheduled.</returns>
-		public async UniTask ScheduleJobsAsync()
+		public void  ScheduleJobsAsync()
+		{
+			ScheduleBurst(ref jobQueue, ref baseScheduler, BatchSize);
+		}
+
+		private static void ScheduleBurst(ref NativeQueue<JobForData<T>> jobQueue, ref JobSchedulerBase baseScheduler, byte batchSize)
 		{
 			byte count = 0;
+			var length = jobQueue.Count;
 
 			// Use indexing instead of foreach to allow struct modification
-			for (var i = 0; i < jobQueue.Count; i++)
+			for (var i = 0; i < length; i++)
 			{
 				count++;
 				// Get the job data
@@ -137,12 +144,9 @@ namespace PatataGames.JobScheduler
 				JobHandle handle = jobData.Job.ScheduleByRef(jobData.ArrayLength, jobData.Dependency);
 				baseScheduler.AddJobHandle(handle);
 
-				if (count < BatchSize) continue;
-				await UniTask.Yield();
+				if (count < batchSize) continue;
 				count = 0;
 			}
-
-			jobQueue.Clear();
 		}
 
 		/// <summary>
@@ -150,10 +154,7 @@ namespace PatataGames.JobScheduler
 		///     blocking the main thread for too long.
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
-		public UniTask CompleteAsync()
-		{
-			return baseScheduler.CompleteAsync();
-		}
+		public void CompleteAsync() => baseScheduler.CompleteAsync();
 
 		/// <summary>
 		///     Completes all tracked jobs without yielding.

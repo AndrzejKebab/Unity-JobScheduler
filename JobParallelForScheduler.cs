@@ -46,7 +46,7 @@ namespace PatataGames.JobScheduler
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobParallelFor.</typeparam>
-	public struct JobParallelForScheduler<T> : IJobScheduler, IDisposable
+	public struct JobParallelForScheduler<T> : IDisposable
 		where T : unmanaged, IJobParallelFor
 	{
 		private JobSchedulerBase                  baseScheduler;
@@ -130,7 +130,7 @@ namespace PatataGames.JobScheduler
 		///     blocking the main thread for too long.
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are scheduled.</returns>
-		public async UniTask ScheduleJobsAsync()
+		public void ScheduleJobsAsync()
 		{
 			byte count = 0;
 
@@ -142,7 +142,6 @@ namespace PatataGames.JobScheduler
 				baseScheduler.AddJobHandle(handle);
 
 				if (count < BatchSize) continue;
-				await UniTask.Yield();
 				count = 0;
 			}
 
@@ -154,10 +153,7 @@ namespace PatataGames.JobScheduler
 		///     blocking the main thread for too long.
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
-		public UniTask CompleteAsync()
-		{
-			return baseScheduler.CompleteAsync();
-		}
+		public void CompleteAsync() => baseScheduler.CompleteAsync();
 
 		/// <summary>
 		///     Completes all tracked jobs without yielding.
