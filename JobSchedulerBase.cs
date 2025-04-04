@@ -1,6 +1,5 @@
 ﻿using System;
 using Cysharp.Threading.Tasks;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
@@ -11,7 +10,6 @@ namespace PatataGames.JobScheduler
 	///     Base job scheduler that provides common functionality for managing Unity job handles.
 	///     Handles batched completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
-	[BurstCompile]
 	public struct JobSchedulerBase : IDisposable
 	{
 		private NativeList<JobHandle> jobHandles;
@@ -52,7 +50,6 @@ namespace PatataGames.JobScheduler
 		///     blocking the main thread for too long.
 		/// </summary>
 		/// <returns>A UniTask that completes when all jobs are finished.</returns>
-		[BurstCompile]
 		public async UniTask CompleteAsync()
 		{
 			// Early exit if no jobs to process
@@ -84,7 +81,6 @@ namespace PatataGames.JobScheduler
 		///     Completes all tracked jobs without yielding.
 		///     Use this when immediate completion is required.
 		/// </summary>
-		[BurstCompile]
 		public void CompleteImmediate()
 		{
 			try
