@@ -6,6 +6,7 @@ This is WIP and yet not **fully** tested!
 
 ### Example in use
 1.0.0
+BatchSize = 16
 
 [working example 1.0.0](https://github.com/user-attachments/assets/f4e8e3b4-e6ab-4e32-be8a-aefc0032b5ba)
 
@@ -13,11 +14,17 @@ This is WIP and yet not **fully** tested!
 
 Default BatchSize
 
+[working example b32 1.1.0](https://github.com/user-attachments/assets/9a26016b-17f6-4d58-8bd1-10ae466fb89e)
+
+BatchSize = 16
+
 [working example b16 1.1.0](https://github.com/user-attachments/assets/1ca6ac7f-5f3b-4b2e-9649-46e54b09d1de)
 
-BatchSize = 32
+1.1.1
+BatchSize = 16
 
-[working example b32 1.1.0](https://github.com/user-attachments/assets/9a26016b-17f6-4d58-8bd1-10ae466fb89e)
+![image](https://github.com/user-attachments/assets/ba4cd777-904e-4e6d-ae3d-6f3526a42f46)
+
 
 ## Overview
 
