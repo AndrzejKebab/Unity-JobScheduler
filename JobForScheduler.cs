@@ -124,6 +124,14 @@ namespace PatataGames.JobScheduler
 		{
 			baseScheduler.AddJobHandle(handle);
 		}
+		/// <summary>
+		///     Adds an external job handle to the tracking list.
+		/// </summary>
+		/// <param name="handle">The job handle to track.</param>
+		public void AddJobHandle(JobHandle handle, JobSchedulerBase.OnAllJobsCompleted onAllJobsCompleted)
+		{
+			baseScheduler.AddJobHandle(handle, onAllJobsCompleted);
+		}
 
 		/// <summary>
 		///     Schedules all queued jobs in batches, yielding between batches to prevent
