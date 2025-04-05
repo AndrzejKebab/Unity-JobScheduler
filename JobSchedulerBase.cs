@@ -14,7 +14,54 @@ namespace PatataGames.JobScheduler
 	{
 		private NativeList<JobHandle> jobHandles;
 		private byte                  batchSize;
+ 
+		/// <summary>
+        /// Delegate for job-related callbacks.
+        /// </summary>
+        /// <param name="jobId">The identifier for the job.</param>
+        public delegate void JobCallback(int jobId);
+		
+        public delegate void JobCompleteCallback();
 
+        /// <summary>
+        /// Delegate for batch completion callbacks.
+        /// </summary>
+        /// <param name="completedCount">Number of jobs completed in this batch.</param>
+        /// <param name="remainingCount">Number of jobs remaining after this batch.</param>
+        public delegate void BatchCompletedCallback(int completedCount, int remainingCount);
+
+        /// <summary>
+        /// Delegate for job error callbacks.
+        /// </summary>
+        /// <param name="jobId">The identifier for the job that encountered an error.</param>
+        /// <param name="exception">The exception that occurred.</param>
+        public delegate void JobErrorCallback(int jobId, Exception exception);
+
+        /// <summary>
+        /// Invoked when a new job is added to the scheduler.
+        /// </summary>
+        public JobCallback OnJobAdded;
+
+        /// <summary>
+        /// Invoked when a specific job completes successfully.
+        /// </summary>
+        public JobCompleteCallback OnJobCompleted;
+
+        /// <summary>
+        /// Invoked when a batch of jobs completes.
+        /// </summary>
+        public BatchCompletedCallback OnBatchCompleted;
+
+        /// <summary>
+        /// Invoked when all scheduled jobs have completed.
+        /// </summary>
+        public Action OnAllJobsCompleted;
+
+        /// <summary>
+        /// Invoked when a job encounters an error during completion.
+        /// </summary>
+        public JobErrorCallback OnJobError;
+        
 		/// <summary>
 		///     Initializes a new instance of the JobSchedulerBase struct.
 		/// </summary>
@@ -24,6 +71,12 @@ namespace PatataGames.JobScheduler
 		{
 			jobHandles     = new NativeList<JobHandle>(capacity, Allocator.Persistent);
 			this.batchSize = batchSize;
+			// Initialize callbacks as null
+			OnJobAdded         = null;
+			OnJobCompleted     = null;
+			OnBatchCompleted   = null;
+			OnAllJobsCompleted = null;
+			OnJobError         = null;
 		}
 
 		/// <summary>
@@ -43,6 +96,8 @@ namespace PatataGames.JobScheduler
 		public void AddJobHandle(JobHandle handle)
 		{
 			jobHandles.Add(handle);
+			// Trigger the OnJobAdded callback
+			OnJobAdded?.Invoke();
 		}
 
 		/// <summary>
@@ -63,17 +118,45 @@ namespace PatataGames.JobScheduler
 				// Only process jobs that are already completed
 				if (!jobHandles[i].IsCompleted) continue;
 
-				// Complete the job and remove it
-				jobHandles[i].Complete();
-				jobHandles.RemoveAtSwapBack(i);
-
-				// Increment batch counter
-				batchCount++;
+				try
+				{
+					// Complete the job
+					jobHandles[i].Complete();
+                    
+					// Invoke job completed callback
+					OnJobCompleted?.Invoke();
+                    
+					// Remove the completed job
+					jobHandles.RemoveAtSwapBack(i);
+                    
+				}
+				catch (Exception e)
+				{
+					// Invoke error callback if available
+					if (OnJobError != null)
+					{
+						OnJobError.Invoke(, e);
+					}
+					else
+					{
+						Debug.LogError($"Error completing job : {e}");
+					}
+                    
+					// Remove the failed job
+					jobHandles.RemoveAtSwapBack(i);
+				}
 
 				// Yield after processing a batch to prevent blocking
 				if (batchCount < BatchSize) continue;
-				await UniTask.Yield();
+				OnBatchCompleted?.Invoke(jobHandles.Length);
 				batchCount = 0;
+				
+				// If all jobs completed, trigger the callback
+				if (jobHandles.Length == 0)
+				{
+					OnAllJobsCompleted?.Invoke();
+				}
+				await UniTask.Yield();
 			}
 		}
 
@@ -85,8 +168,18 @@ namespace PatataGames.JobScheduler
 		{
 			try
 			{
-				for (var i = 0; i < jobHandles.Length; i++) jobHandles[i].Complete();
-				jobHandles.Clear();
+				for (var i = 0; i < jobHandles.Length; i++)
+				{
+					try
+					{
+						jobHandles[i].Complete();
+						OnJobCompleted?.Invoke();
+					}
+					catch (Exception e)
+					{
+						OnJobError?.Invoke(e);
+					}
+				}
 			}
 			catch (Exception e)
 			{
