@@ -4,225 +4,247 @@ using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
 
-namespace PatataGames.JobScheduler
+namespace PatataGames.JobScheduler;
+
+/// <summary>
+///     Base job scheduler that provides common functionality for managing Unity job handles.
+///     Handles batched completion of jobs with yielding to prevent main thread blocking.
+/// </summary>
+public struct JobSchedulerBase : IDisposable
 {
+	// Store job handles in a native collection for performance and Burst compatibility
+	private NativeHashMap<Guid, JobHandle> jobHandles;
+	private byte                           batchSize;
+
 	/// <summary>
-	///     Base job scheduler that provides common functionality for managing Unity job handles.
-	///     Handles batched completion of jobs with yielding to prevent main thread blocking.
+	///     Delegate for job completion without parameters.
 	/// </summary>
-	public struct JobSchedulerBase : IDisposable
+	public delegate void JobCompleteCallback(JobHandle handle);
+
+	public delegate void JobErrorCallback(Exception e);
+
+	/// <summary>
+	///     Delegate for batch completion callbacks.
+	/// </summary>
+	/// <param name="remainingCount">Number of jobs remaining after this batch.</param>
+	public delegate void BatchCompletedCallback(int remainingCount);
+
+	/// <summary>
+	///     Invoked when a specific job completes successfully.
+	/// </summary>
+	public JobCompleteCallback OnJobCompleted;
+
+	/// <summary>
+	///     Invoked when a batch of jobs completes.
+	/// </summary>
+	public BatchCompletedCallback OnBatchCompleted;
+
+	/// <summary>
+	///     Invoked when all scheduled jobs have completed.
+	/// </summary>
+	public Action OnAllJobsCompleted;
+
+	public JobErrorCallback OnJobErrorCallback;
+
+	/// <summary>
+	///     Initializes a new instance of the JobSchedulerBase struct.
+	/// </summary>
+	/// <param name="capacity">Initial capacity for the job handles list. Default is 64.</param>
+	/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
+	public JobSchedulerBase(int capacity = 64, byte batchSize = 32)
 	{
-		private NativeList<JobHandle> jobHandles;
-		private byte                  batchSize;
- 
-		/// <summary>
-        /// Delegate for job-related callbacks.
-        /// </summary>
-        /// <param name="jobId">The identifier for the job.</param>
-        public delegate void JobCallback(int jobId);
-		
-        public delegate void JobCompleteCallback();
+		jobHandles     = new NativeHashMap<Guid, JobHandle>(capacity, Allocator.Persistent);
+		this.batchSize = batchSize;
 
-        /// <summary>
-        /// Delegate for batch completion callbacks.
-        /// </summary>
-        /// <param name="completedCount">Number of jobs completed in this batch.</param>
-        /// <param name="remainingCount">Number of jobs remaining after this batch.</param>
-        public delegate void BatchCompletedCallback(int completedCount, int remainingCount);
+		// Initialize callbacks as null
+		OnJobCompleted     = null;
+		OnBatchCompleted   = null;
+		OnAllJobsCompleted = null;
+		OnJobErrorCallback = null;
+	}
 
-        /// <summary>
-        /// Delegate for job error callbacks.
-        /// </summary>
-        /// <param name="jobId">The identifier for the job that encountered an error.</param>
-        /// <param name="exception">The exception that occurred.</param>
-        public delegate void JobErrorCallback(int jobId, Exception exception);
+	/// <summary>
+	///     Controls how many jobs are processed before yielding back to the main thread.
+	///     Default is 32.
+	/// </summary>
+	public byte BatchSize
+	{
+		get => batchSize;
+		set => batchSize = value <= 0 ? (byte)32 : value;
+	}
 
-        /// <summary>
-        /// Invoked when a new job is added to the scheduler.
-        /// </summary>
-        public JobCallback OnJobAdded;
+	/// <summary>
+	///     Adds a job handle to the tracking list without a specific callback.
+	/// </summary>
+	/// <param name="handle">The job handle to track.</param>
+	public void AddJobHandle(JobHandle handle, Guid jobId)
+	{
+		jobHandles.Add(jobId, handle);
+	}
 
-        /// <summary>
-        /// Invoked when a specific job completes successfully.
-        /// </summary>
-        public JobCompleteCallback OnJobCompleted;
 
-        /// <summary>
-        /// Invoked when a batch of jobs completes.
-        /// </summary>
-        public BatchCompletedCallback OnBatchCompleted;
-
-        /// <summary>
-        /// Invoked when all scheduled jobs have completed.
-        /// </summary>
-        public Action OnAllJobsCompleted;
-
-        /// <summary>
-        /// Invoked when a job encounters an error during completion.
-        /// </summary>
-        public JobErrorCallback OnJobError;
-        
-		/// <summary>
-		///     Initializes a new instance of the JobSchedulerBase struct.
-		/// </summary>
-		/// <param name="capacity">Initial capacity for the job handles list. Default is 64.</param>
-		/// <param name="batchSize">Number of jobs to process before yielding. Default is 32.</param>
-		public JobSchedulerBase(int capacity = 64, byte batchSize = 32)
+	/// <summary>
+	///     Completes all tracked jobs in batches, yielding between batches to prevent
+	///     blocking the main thread for too long.
+	/// </summary>
+	/// <returns>A UniTask that completes when all jobs are finished.</returns>
+	public async UniTask CompleteAsync()
+	{
+		try
 		{
-			jobHandles     = new NativeList<JobHandle>(capacity, Allocator.Persistent);
-			this.batchSize = batchSize;
-			// Initialize callbacks as null
-			OnJobAdded         = null;
-			OnJobCompleted     = null;
-			OnBatchCompleted   = null;
-			OnAllJobsCompleted = null;
-			OnJobError         = null;
-		}
+			// Early exit if no jobs to process or already disposed
+			if (!jobHandles.IsCreated || jobHandles.Count == 0) return;
 
-		/// <summary>
-		///     Controls how many jobs are processed before yielding back to the main thread.
-		///     Default is 32.
-		/// </summary>
-		public byte BatchSize
-		{
-			get => batchSize;
-			set => batchSize = value <= 0 ? (byte)32 : value;
-		}
+			// Take a snapshot of the keys to avoid modification during iteration
+			NativeArray<Guid> jobKeys = jobHandles.GetKeyArray(Allocator.Temp);
 
-		/// <summary>
-		///     Adds a job handle to the tracking list.
-		/// </summary>
-		/// <param name="handle">The job handle to track.</param>
-		public void AddJobHandle(JobHandle handle)
-		{
-			jobHandles.Add(handle);
-			// Trigger the OnJobAdded callback
-			OnJobAdded?.Invoke();
-		}
-
-		/// <summary>
-		///     Completes all tracked jobs in batches, yielding between batches to prevent
-		///     blocking the main thread for too long.
-		/// </summary>
-		/// <returns>A UniTask that completes when all jobs are finished.</returns>
-		public async UniTask CompleteAsync()
-		{
-			// Early exit if no jobs to process
-			if (jobHandles.Length == 0) return;
-			
 			byte batchCount = 0;
-			
-			// Process from the end to make removal safer
-			for (var i = jobHandles.Length - 1; i >= 0; i--)
+			for (var i = 0; i < jobKeys.Length; i++)
 			{
+				// Check if we've been disposed during iteration
+				if (!jobHandles.IsCreated)
+				{
+					jobKeys.Dispose();
+					return;
+				}
+
+				Guid jobKey = jobKeys[i];
+
+				// Skip if key no longer exists
+				if (!jobHandles.TryGetValue(jobKey, out JobHandle jobHandle))
+					continue;
+
 				// Only process jobs that are already completed
-				if (!jobHandles[i].IsCompleted) continue;
+				if (!jobHandle.IsCompleted)
+					continue;
 
 				try
 				{
+					// Invoke the global job completed callback
+					OnJobCompleted?.Invoke(jobHandle);
+
 					// Complete the job
-					jobHandles[i].Complete();
-                    
-					// Invoke job completed callback
-					OnJobCompleted?.Invoke();
-                    
+					jobHandle.Complete();
+
 					// Remove the completed job
-					jobHandles.RemoveAtSwapBack(i);
-                    
+					if (jobHandles.IsCreated)
+						jobHandles.Remove(jobKey);
 				}
 				catch (Exception e)
 				{
-					// Invoke error callback if available
-					if (OnJobError != null)
-					{
-						OnJobError.Invoke(, e);
-					}
-					else
-					{
-						Debug.LogError($"Error completing job : {e}");
-					}
-                    
+					Debug.LogError($"Error completing job: {e}");
+					OnJobErrorCallback?.Invoke(e);
+
 					// Remove the failed job
-					jobHandles.RemoveAtSwapBack(i);
+					if (jobHandles.IsCreated) jobHandles.Remove(jobKey);
 				}
-
-				// Yield after processing a batch to prevent blocking
-				if (batchCount < BatchSize) continue;
-				OnBatchCompleted?.Invoke(jobHandles.Length);
-				batchCount = 0;
 				
-				// If all jobs completed, trigger the callback
-				if (jobHandles.Length == 0)
-				{
-					OnAllJobsCompleted?.Invoke();
-				}
+				// Increment batch counter
+				batchCount++;
+
+				// Check if we've completed a batch
+				if (batchCount < BatchSize) continue;
+
+				// Invoke the batch completed event
+				OnBatchCompleted?.Invoke(jobHandles.Count);
+
+				jobKeys.Dispose(); // Dispose before yielding
 				await UniTask.Yield();
+
+				// Re-check if we've been disposed after the yield
+				if (!jobHandles.IsCreated)
+					return;
+
+				// Get a fresh key array after yielding
+				jobKeys    = jobHandles.GetKeyArray(Allocator.Temp);
+				batchCount = 0;
 			}
+
+			// Clean up
+			jobKeys.Dispose();
+
+			// Invoke batch completed one final time if we processed any jobs in the last incomplete batch
+			if (batchCount > 0) OnBatchCompleted?.Invoke(jobHandles.Count);
+
+			// If all jobs completed, trigger the callback
+			if (jobHandles.IsCreated && jobHandles.Count == 0)
+				OnAllJobsCompleted?.Invoke();
 		}
-
-		/// <summary>
-		///     Completes all tracked jobs without yielding.
-		///     Use this when immediate completion is required.
-		/// </summary>
-		public void CompleteImmediate()
+		catch (Exception e)
 		{
-			try
-			{
-				for (var i = 0; i < jobHandles.Length; i++)
-				{
-					try
-					{
-						jobHandles[i].Complete();
-						OnJobCompleted?.Invoke();
-					}
-					catch (Exception e)
-					{
-						OnJobError?.Invoke(e);
-					}
-				}
-			}
-			catch (Exception e)
-			{
-				Debug.LogWarning("Error completing jobs " + e);
-				throw;
-			}
+			Debug.LogError($"Exception in CompleteAsync: {e}");
+			OnJobErrorCallback?.Invoke(e);
 		}
+	}
 
-		/// <summary>
-		///     Returns the number of tracked job handles.
-		/// </summary>
-		/// <returns>The count of job handles currently being tracked.</returns>
-		public int JobHandlesCount => jobHandles.Length;
+	/// <summary>
+	///     Completes all tracked jobs without yielding.
+	///     Use this when immediate completion is required.
+	/// </summary>
+	public void CompleteImmediate()
+	{
+		if (!jobHandles.IsCreated) return;
 
-		/// <summary>
-		///     Checks if all scheduled jobs have been completed.
-		/// </summary>
-		/// <returns>
-		///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
-		/// </returns>
-		public bool AreJobsCompleted
+		try
 		{
-			get
-			{
-				foreach (JobHandle handle in jobHandles)
+			NativeArray<Guid> jobKeys = jobHandles.GetKeyArray(Allocator.Temp);
+
+			foreach (Guid jobKey in jobKeys)
+				if (jobHandles.TryGetValue(jobKey, out JobHandle jobHandle))
 				{
-					if (!handle.IsCompleted)
-					{
-						return false;
-					}
+					jobHandle.Complete();
+					// Invoke the global job completed callback
+					OnJobCompleted?.Invoke(jobHandle);
 				}
 
-				return true;
-			}
-		}
+			jobKeys.Dispose();
 
-		/// <summary>
-		///     Completes all jobs and releases resources.
-		/// </summary>
-		public void Dispose()
-		{
-			CompleteImmediate();
-			jobHandles.Dispose();
+			// Clear all jobs and callbacks
+			jobHandles.Clear();
+
+			// If we completed any jobs, trigger the all completed callback
+			OnAllJobsCompleted?.Invoke();
 		}
+		catch (Exception e)
+		{
+			OnJobErrorCallback?.Invoke(e);
+			Debug.LogWarning("Error completing jobs " + e);
+			throw;
+		}
+	}
+
+	/// <summary>
+	///     Returns the number of tracked job handles.
+	/// </summary>
+	/// <returns>The count of job handles currently being tracked.</returns>
+	public int JobHandlesCount => jobHandles.Count;
+
+	/// <summary>
+	///     Checks if all scheduled jobs have been completed.
+	/// </summary>
+	/// <returns>
+	///     <c>true</c> if all jobs are completed; otherwise, <c>false</c> if any job is still running.
+	/// </returns>
+	public bool AreJobsCompleted
+	{
+		get
+		{
+			foreach (KVPair<Guid, JobHandle> Job in jobHandles)
+			{
+				jobHandles.TryGetValue(Job.Key, out JobHandle jobHandle);
+				if (!jobHandle.IsCompleted) return false;
+			}
+
+			return true;
+		}
+	}
+
+	/// <summary>
+	///     Completes all jobs and releases resources.
+	/// </summary>
+	public void Dispose()
+	{
+		CompleteImmediate();
+		jobHandles.Dispose();
 	}
 }

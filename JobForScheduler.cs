@@ -27,6 +27,8 @@ namespace PatataGames.JobScheduler
 		///     Optional job handle that must complete before this job can start.
 		/// </summary>
 		public JobHandle Dependency;
+
+		public Guid JobID;
 		
 		/// <summary>
 		///     Schedules the job with the specified array length and dependency.
@@ -48,10 +50,10 @@ namespace PatataGames.JobScheduler
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJobFor.</typeparam>
-	public struct JobForScheduler<T>  : IJobScheduler, IDisposable 
+	public struct JobForScheduler<T>  : IDisposable 
 		where T : unmanaged, IJobFor
 	{
-		private JobSchedulerBase       baseScheduler;
+		public JobSchedulerBase       baseScheduler;
 		private NativeQueue<JobForData<T>> jobQueue;
 
 		/// <summary>
@@ -108,11 +110,13 @@ namespace PatataGames.JobScheduler
 		/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 		public void AddJob(T job, int arrayLength, JobHandle dependency = default)
 		{
+			var id = Guid.NewGuid();
 			jobQueue.Enqueue(new JobForData<T>
 			             {
 				             Job         = job,
 				             ArrayLength = arrayLength,
-				             Dependency   = dependency
+				             Dependency   = dependency,
+				             JobID = id
 			             });
 		}
 
@@ -120,9 +124,9 @@ namespace PatataGames.JobScheduler
 		///     Adds an external job handle to the tracking list.
 		/// </summary>
 		/// <param name="handle">The job handle to track.</param>
-		public void AddJobHandle(JobHandle handle)
+		public void AddJobHandle(JobHandle handle, Guid jobId)
 		{
-			baseScheduler.AddJobHandle(handle);
+			baseScheduler.AddJobHandle(handle, jobId);
 		}
 
 		/// <summary>
@@ -138,9 +142,10 @@ namespace PatataGames.JobScheduler
 			for (var i = 0; i < jobQueue.Count; i++)
 			{
 				count++;
+				var job = jobQueue.Dequeue();
 				// Schedule the job and store the handle
-				JobHandle handle = jobQueue.Dequeue().Schedule();
-				baseScheduler.AddJobHandle(handle);
+				JobHandle handle = job.Schedule();
+				baseScheduler.AddJobHandle(handle, job.JobID);
 
 				if (count < BatchSize) continue;
 				await UniTask.Yield();

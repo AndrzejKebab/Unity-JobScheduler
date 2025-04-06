@@ -20,6 +20,8 @@ namespace PatataGames.JobScheduler
 		///     Optional job handle that must complete before this job can start.
 		/// </summary>
 		public JobHandle Dependency;
+
+		public Guid JobID;
 		
 		/// <summary>
 		///     Schedules the job with the specified dependency.
@@ -36,7 +38,7 @@ namespace PatataGames.JobScheduler
 	///     Provides batched scheduling and completion of jobs with yielding to prevent main thread blocking.
 	/// </summary>
 	/// <typeparam name="T">The job type, which must be an unmanaged struct implementing IJob.</typeparam>
-	public struct JobScheduler<T> : IJobScheduler, IDisposable
+	public struct JobScheduler<T> : IDisposable
 		where T : unmanaged, IJob
 	{
 		private JobSchedulerBase    baseScheduler;
@@ -96,10 +98,12 @@ namespace PatataGames.JobScheduler
 		/// <param name="dependency">Optional job handle that must complete before this job can start.</param>
 		public void AddJob(T job, JobHandle dependency = default)
 		{
+			var id = Guid.NewGuid();
 			jobsQueue.Enqueue(new JobData<T>
 			             {
 				             Job       = job,
-				             Dependency = dependency
+				             Dependency = dependency,
+				             JobID = id
 			             });
 		}
 
@@ -107,7 +111,7 @@ namespace PatataGames.JobScheduler
 		///     Adds an external job handle to the tracking list.
 		/// </summary>
 		/// <param name="handle">The job handle to track.</param>
-		public void AddJobHandle(JobHandle handle) => baseScheduler.AddJobHandle(handle);
+		public void AddJobHandle(JobHandle handle, Guid jobId) => baseScheduler.AddJobHandle(handle, jobId);
 
 		/// <summary>
 		///     Schedules all queued jobs in batches, yielding between batches to prevent
@@ -121,8 +125,9 @@ namespace PatataGames.JobScheduler
 			for (var i = 0; i < jobsQueue.Count; i++)
 			{
 				count++;
-				JobHandle  handle = jobsQueue.Dequeue().Schedule();
-				baseScheduler.AddJobHandle(handle);
+				var       job    = jobsQueue.Dequeue();
+				JobHandle handle = job.Schedule();
+				baseScheduler.AddJobHandle(handle, job.JobID);
 
 				if (count < BatchSize) continue;
 				await UniTask.Yield();
